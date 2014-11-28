@@ -1,0 +1,207 @@
+diff --git a/drivers/mfd/wcd9xxx-core.c b/drivers/mfd/wcd9xxx-core.c
+index 6152bc2..f2c24ba 100644
+--- a/drivers/mfd/wcd9xxx-core.c
++++ b/drivers/mfd/wcd9xxx-core.c
+@@ -82,6 +82,22 @@ int wcd9xxx_reg_read(struct wcd9xxx *wcd9xxx, unsigned short reg)
+ }
+ EXPORT_SYMBOL_GPL(wcd9xxx_reg_read);
+ 
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++int wcd9xxx_reg_read_safe(struct wcd9xxx *wcd9xxx, unsigned short reg)
++{
++        u8 val;
++        int ret;
++
++        ret = wcd9xxx_read(wcd9xxx, reg, 1, &val, false);
++
++        if (ret < 0)
++                return ret;
++        else
++                return val;
++}
++EXPORT_SYMBOL_GPL(wcd9xxx_reg_read_safe);
++#endif
++
+ static int wcd9xxx_write(struct wcd9xxx *wcd9xxx, unsigned short reg,
+ 			int bytes, void *src, bool interface_reg)
+ {
+diff --git a/include/linux/mfd/wcd9xxx/core.h b/include/linux/mfd/wcd9xxx/core.h
+index 508bf3b..40e3a83 100644
+--- a/include/linux/mfd/wcd9xxx/core.h
++++ b/include/linux/mfd/wcd9xxx/core.h
+@@ -161,6 +161,9 @@ struct wcd9xxx {
+ };
+ 
+ int wcd9xxx_reg_read(struct wcd9xxx *wcd9xxx, unsigned short reg);
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++int wcd9xxx_reg_read_safe(struct wcd9xxx *wcd9xxx, unsigned short reg);
++#endif
+ int wcd9xxx_reg_write(struct wcd9xxx *wcd9xxx, unsigned short reg,
+ 		u8 val);
+ int wcd9xxx_interface_reg_read(struct wcd9xxx *wcd9xxx, unsigned short reg);
+diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
+index 025e863..9ed697e 100644
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -461,3 +461,16 @@ config SND_SOC_ES310
+ 	default n
+ 	help
+ 	  earSmart eS310 Voice Processor
++
++config SOUND_CONTROL_HAX_GPL
++	tristate "wcd93xx sound control hax"
++	default y
++	help
++	  FauxSound WCD93xx chipset sound control hacks
++
++config SOUND_CONTROL_HAX_3_GPL
++	tristate "new wcd93xx sound control hax"
++	default y
++	help
++	  FauxSound WCD93xx chipset sound control hacks 3.0 for deeper hax
++
+diff --git a/sound/soc/codecs/Makefile b/sound/soc/codecs/Makefile
+index 1870927..3964863 100644
+--- a/sound/soc/codecs/Makefile
++++ b/sound/soc/codecs/Makefile
+@@ -214,3 +214,8 @@ obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
+ obj-$(CONFIG_SND_SOC_TPA6130A2)	+= snd-soc-tpa6130a2.o
+ obj-$(CONFIG_SND_SOC_TPA2028D)	+= tpa2028d.o
+ obj-$(CONFIG_SND_SOC_ES310) += es310.o
++
++# Hack
++obj-$(CONFIG_SOUND_CONTROL_HAX_GPL) += sound_control_gpl.o
++obj-$(CONFIG_SOUND_CONTROL_HAX_3_GPL) += sound_control_3_gpl.o
++
+diff --git a/sound/soc/codecs/wcd9310.c b/sound/soc/codecs/wcd9310.c
+index 0a42355..a0f0bae 100644
+--- a/sound/soc/codecs/wcd9310.c
++++ b/sound/soc/codecs/wcd9310.c
+@@ -3876,6 +3876,7 @@ static int tabla_readable(struct snd_soc_codec *ssc, unsigned int reg)
+ 
+ 	return tabla_reg_readable[reg];
+ }
++
+ static bool tabla_is_digital_gain_register(unsigned int reg)
+ {
+ 	bool rtn = false;
+@@ -3942,24 +3943,18 @@ static int tabla_volatile(struct snd_soc_codec *ssc, unsigned int reg)
+ 
+ 	return 0;
+ }
+-
+ #define TABLA_FORMATS (SNDRV_PCM_FMTBIT_S16_LE)
+-static int tabla_write(struct snd_soc_codec *codec, unsigned int reg,
+-	unsigned int value)
+-{
+-	int ret;
+-	BUG_ON(reg > TABLA_MAX_REGISTER);
+ 
+-	if (!tabla_volatile(codec, reg)) {
+-		ret = snd_soc_cache_write(codec, reg, value);
+-		if (ret != 0)
+-			dev_err(codec->dev, "Cache write to %x failed: %d\n",
+-				reg, ret);
+-	}
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++extern int snd_hax_reg_access(unsigned int);
++extern unsigned int snd_hax_cache_read(unsigned int);
++extern void snd_hax_cache_write(unsigned int, unsigned int);
++#endif
+ 
+-	return wcd9xxx_reg_write(codec->control_data, reg, value);
+-}
+-static unsigned int tabla_read(struct snd_soc_codec *codec,
++#ifndef CONFIG_SOUND_CONTROL_HAX_3_GPL
++static
++#endif
++unsigned int tabla_read(struct snd_soc_codec *codec,
+ 				unsigned int reg)
+ {
+ 	unsigned int val;
+@@ -3980,6 +3975,46 @@ static unsigned int tabla_read(struct snd_soc_codec *codec,
+ 	val = wcd9xxx_reg_read(codec->control_data, reg);
+ 	return val;
+ }
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++EXPORT_SYMBOL(tabla_read);
++#endif
++
++#ifndef CONFIG_SOUND_CONTROL_HAX_3_GPL
++static
++#endif
++int tabla_write(struct snd_soc_codec *codec, unsigned int reg,
++	unsigned int value)
++{
++	int ret;
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++	int val;
++#endif
++
++	BUG_ON(reg > TABLA_MAX_REGISTER);
++
++	if (!tabla_volatile(codec, reg)) {
++		ret = snd_soc_cache_write(codec, reg, value);
++		if (ret != 0)
++			dev_err(codec->dev, "Cache write to %x failed: %d\n",
++				reg, ret);
++	}
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++	if (!snd_hax_reg_access(reg)) {
++		if (!((val = snd_hax_cache_read(reg)) != -1)) {
++			val = wcd9xxx_reg_read_safe(codec->control_data, reg);
++		}
++	} else {
++		snd_hax_cache_write(reg, value);
++		val = value;
++	}
++	return wcd9xxx_reg_write(codec->control_data, reg, val);
++#else
++	return wcd9xxx_reg_write(codec->control_data, reg, value);
++#endif
++}
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++EXPORT_SYMBOL(tabla_write);
++#endif
+ 
+ static s16 tabla_get_current_v_ins(struct tabla_priv *tabla, bool hu)
+ {
+@@ -8458,6 +8493,15 @@ static const struct file_operations codec_mbhc_debug_ops = {
+ };
+ #endif
+ 
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++struct snd_kcontrol_new *gpl_faux_snd_controls_ptr =
++		(struct snd_kcontrol_new *)tabla_snd_controls;
++struct snd_soc_codec *fauxsound_codec_ptr;
++EXPORT_SYMBOL(fauxsound_codec_ptr);
++int wcd9xxx_hw_revision;
++EXPORT_SYMBOL(wcd9xxx_hw_revision);
++#endif
++
+ static int tabla_codec_probe(struct snd_soc_codec *codec)
+ {
+ 	struct wcd9xxx *control;
+@@ -8467,10 +8511,22 @@ static int tabla_codec_probe(struct snd_soc_codec *codec)
+ 	int i;
+ 	int ch_cnt;
+ 
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++	pr_info("tabla codec probe...\n");
++	fauxsound_codec_ptr = codec;
++#endif
++
+ 	codec->control_data = dev_get_drvdata(codec->dev->parent);
+ 	control = codec->control_data;
+ 
++#ifdef CONFIG_SOUND_CONTROL_HAX_3_GPL
++	if (TABLA_IS_2_0(control->version))
++		wcd9xxx_hw_revision = 1;
++	else
++		wcd9xxx_hw_revision = 2;
++#endif
+ 	tabla = kzalloc(sizeof(struct tabla_priv), GFP_KERNEL);
++
+ 	if (!tabla) {
+ 		dev_err(codec->dev, "Failed to allocate private data\n");
+ 		return -ENOMEM;

@@ -1,0 +1,307 @@
+diff --git a/arch/arm/mach-msm/clock-8960.c b/arch/arm/mach-msm/clock-8960.c
+index 7b20003..9323db0 100644
+--- a/arch/arm/mach-msm/clock-8960.c
++++ b/arch/arm/mach-msm/clock-8960.c
+@@ -3532,7 +3532,14 @@ static struct clk_freq_tbl clk_tbl_gfx3d[] = {
+ 	F_GFX3D(266667000, pll2,  1,  3),
+ 	F_GFX3D(320000000, pll2,  2,  5),
+ 	F_GFX3D(400000000, pll2,  1,  2),
++	F_GFX3D(409500000, pll15, 1,  2),
+ 	F_GFX3D(450000000, pll15, 1,  2),
++	F_GFX3D(477000000, pll15, 1,  2),
++	F_GFX3D(490500000, pll15, 1,  2),
++	F_GFX3D(504000000, pll15, 1,  2),
++	F_GFX3D(531000000, pll15, 1,  2),
++	F_GFX3D(558000000, pll15, 1,  2),
++	F_GFX3D(585000000, pll15, 1,  2),
+ 	F_END
+ };
+ 
+@@ -3587,8 +3594,8 @@ static unsigned long fmax_gfx3d_8064ab[VDD_DIG_NUM] = {
+ 
+ static unsigned long fmax_gfx3d_8064[VDD_DIG_NUM] = {
+ 	[VDD_DIG_LOW]     = 128000000,
+-	[VDD_DIG_NOMINAL] = 325000000,
+-	[VDD_DIG_HIGH]    = 400000000
++	[VDD_DIG_NOMINAL] = 320000000,
++	[VDD_DIG_HIGH]    = 450000000
+ };
+ 
+ static unsigned long fmax_gfx3d_8930[VDD_DIG_NUM] = {
+@@ -6336,7 +6343,7 @@ static struct pll_config pll4_config_393 __initdata = {
+ 	.main_output_mask = BIT(23),
+ };
+ 
+-static struct pll_config_regs pll15_regs __initdata = {
++static struct pll_config_regs pll15_regs = {
+ 	.l_reg = MM_PLL3_L_VAL_REG,
+ 	.m_reg = MM_PLL3_M_VAL_REG,
+ 	.n_reg = MM_PLL3_N_VAL_REG,
+@@ -6344,10 +6351,10 @@ static struct pll_config_regs pll15_regs __initdata = {
+ 	.mode_reg = MM_PLL3_MODE_REG,
+ };
+ 
+-static struct pll_config pll15_config __initdata = {
+-	.l = (0x24 | BVAL(31, 7, 0x620)),
++static struct pll_config pll15_config = {
++	.l = (0x21 | BVAL(31, 7, 0x620)),
+ 	.m = 0x1,
+-	.n = 0x9,
++	.n = 0x3,
+ 	.vco_val = BVAL(17, 16, 0x2),
+ 	.vco_mask = BM(17, 16),
+ 	.pre_div_val = 0x0,
+@@ -6601,6 +6608,19 @@ static void __init reg_init(void)
+ 	}
+ }
+ 
++//GPU_OC
++
++extern void configure_pllOC(struct pll_config *config, struct pll_config_regs *regs, u32 ena_fsm_mode);
++
++void __ref SetGPUpll_config(u32 loc, unsigned long freq)
++{
++	pll15_config.l = (loc | BVAL(31, 7, 0x620));
++	pll15_config.m = 0x1;
++	pll15_config.n = 0x3;
++	configure_pllOC(&pll15_config, &pll15_regs, 0);
++	printk("ElementalX: set GPU OC %ld", freq / 1000000);
++}
++
+ struct clock_init_data msm8960_clock_init_data __initdata;
+ static void __init msm8960_clock_pre_init(void)
+ {
+diff --git a/arch/arm/mach-msm/clock-pll.c b/arch/arm/mach-msm/clock-pll.c
+index aeb1c5e..931df11 100644
+--- a/arch/arm/mach-msm/clock-pll.c
++++ b/arch/arm/mach-msm/clock-pll.c
+@@ -501,6 +501,42 @@ void __init __configure_pll(struct pll_config *config,
+ 	writel_relaxed(regval, PLL_CONFIG_REG(regs));
+ }
+ 
++//GPU_OC
++void configure_pllOC(struct pll_config *config,
++    struct pll_config_regs *regs, u32 ena_fsm_mode)
++{
++  u32 regval;
++
++  writel_relaxed(config->l, PLL_L_REG(regs));
++  writel_relaxed(config->m, PLL_M_REG(regs));
++  writel_relaxed(config->n, PLL_N_REG(regs));
++
++  regval = readl_relaxed(PLL_CONFIG_REG(regs));
++
++  /* Enable the MN accumulator  */
++  if (config->mn_ena_mask) {
++    regval &= ~config->mn_ena_mask;
++    regval |= config->mn_ena_val;
++  }
++
++  /* Enable the main output */
++  if (config->main_output_mask) {
++    regval &= ~config->main_output_mask;
++    regval |= config->main_output_val;
++  }
++
++  /* Set pre-divider and post-divider values */
++  regval &= ~config->pre_div_mask;
++  regval |= config->pre_div_val;
++  regval &= ~config->post_div_mask;
++  regval |= config->post_div_val;
++
++  /* Select VCO setting */
++  regval &= ~config->vco_mask;
++  regval |= config->vco_val;
++  writel_relaxed(regval, PLL_CONFIG_REG(regs));
++} 
++
+ void __init configure_sr_pll(struct pll_config *config,
+ 		struct pll_config_regs *regs, u32 ena_fsm_mode)
+ {
+diff --git a/arch/arm/mach-msm/include/mach/kgsl.h b/arch/arm/mach-msm/include/mach/kgsl.h
+index 2d7e8df..fc9ab5e 100644
+--- a/arch/arm/mach-msm/include/mach/kgsl.h
++++ b/arch/arm/mach-msm/include/mach/kgsl.h
+@@ -41,6 +41,8 @@
+ 	 (((_mi) & 0xFF) << 8) | \
+ 	 ((_pa) & 0xFF))
+ 
++extern uint32_t max_gpu;
++
+ enum kgsl_iommu_context_id {
+ 	KGSL_IOMMU_CONTEXT_USER = 0,
+ 	KGSL_IOMMU_CONTEXT_PRIV = 1,
+diff --git a/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c b/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
+index 23a00d2..38f9572 100644
+--- a/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
++++ b/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
+@@ -22,6 +22,8 @@
+ #include "devices.h"
+ #include "board-aries.h"
+ 
++uint32_t max_gpu = 1;
++
+ #ifdef CONFIG_MSM_DCVS
+ static struct msm_dcvs_freq_entry grp3d_freq[] = {
+ 	{0, 900, 0, 0, 0},
+@@ -227,7 +229,7 @@ static struct kgsl_device_iommu_data kgsl_3d0_iommu_data[] = {
+ static struct kgsl_device_platform_data kgsl_3d0_pdata = {
+ 	.pwrlevel = {
+ 		{
+-			.gpu_freq = 400000000,
++			.gpu_freq = 450000000,
+ 			.bus_freq = 4,
+ 			.io_fraction = 0,
+ 		},
+@@ -277,12 +279,29 @@ struct platform_device device_kgsl_3d0 = {
+ 	},
+ };
+ 
++/*gpuoc*/
++static int __init read_max_gpu(char *gpu_oc)
++{
++	if (strcmp(gpu_oc, "1") == 0) {
++		max_gpu = 1;
++	} else {
++		max_gpu = 0;
++	}	
++	return 0;
++}
++
++__setup("ocG=", read_max_gpu);
++/*end gpuoc*/
++
++
+ void __init apq8064_init_gpu(void)
+ {
+ 	unsigned int version = socinfo_get_version();
++	if (max_gpu == 0)
++		kgsl_3d0_pdata.pwrlevel[0].gpu_freq = 400000000;
+ 
+ 	if (cpu_is_apq8064ab())
+-		kgsl_3d0_pdata.pwrlevel[0].gpu_freq = 450000000;
++		kgsl_3d0_pdata.pwrlevel[0].gpu_freq = 400000000;
+ 	if (SOCINFO_VERSION_MAJOR(version) == 2) {
+ 		kgsl_3d0_pdata.chipid = ADRENO_CHIPID(3, 2, 0, 2);
+ 	} else {
+diff --git a/drivers/gpu/msm/kgsl_pwrctrl.c b/drivers/gpu/msm/kgsl_pwrctrl.c
+index 7ee305f..b6477f6 100644
+--- a/drivers/gpu/msm/kgsl_pwrctrl.c
++++ b/drivers/gpu/msm/kgsl_pwrctrl.c
+@@ -19,6 +19,7 @@
+ #include <mach/msm_bus.h>
+ #include <linux/ktime.h>
+ #include <linux/delay.h>
++#include <mach/kgsl.h>
+ 
+ #include "kgsl.h"
+ #include "kgsl_pwrscale.h"
+@@ -44,6 +45,8 @@
+ #define INIT_UDELAY		200
+ #define MAX_UDELAY		2000
+ 
++unsigned long internal_max = 450000000;
++
+ struct clk_pair {
+ 	const char *name;
+ 	uint map;
+@@ -391,6 +394,8 @@ static int _get_nearest_pwrlevel(struct kgsl_pwrctrl *pwr, unsigned int clock)
+ 	return -ERANGE;
+ }
+ 
++extern void SetGPUpll_config(u32 loc, unsigned long freq);
++
+ static int kgsl_pwrctrl_max_gpuclk_store(struct device *dev,
+ 					 struct device_attribute *attr,
+ 					 const char *buf, size_t count)
+@@ -409,6 +414,37 @@ static int kgsl_pwrctrl_max_gpuclk_store(struct device *dev,
+ 	if (ret != 1)
+ 		return count;
+ 
++	if (max_gpu) {
++
++		if (val == 450000000) {
++			SetGPUpll_config(0x21, val);
++		}
++		else if (val == 409500000) {
++			SetGPUpll_config(0x1E, val);
++		}
++		else if (val == 477000000) {
++			SetGPUpll_config(0x23, val);
++		}
++		else if (val == 490500000) {
++			SetGPUpll_config(0x24, val);
++		}
++		else if (val == 504000000) {
++			SetGPUpll_config(0x25, val);
++		}
++		else if (val == 531000000) {
++			SetGPUpll_config(0x27, val);
++		}
++		else if (val == 558000000) {
++			SetGPUpll_config(0x29, val);
++		}
++		else if (val == 585000000) {
++			SetGPUpll_config(0x2B, val);
++		}
++	
++		internal_max = val;
++
++	}	
++
+ 	mutex_lock(&device->mutex);
+ 	level = _get_nearest_pwrlevel(pwr, val);
+ 	if (level < 0)
+@@ -439,8 +475,13 @@ static int kgsl_pwrctrl_max_gpuclk_show(struct device *dev,
+ 	if (device == NULL)
+ 		return 0;
+ 	pwr = &device->pwrctrl;
+-	return snprintf(buf, PAGE_SIZE, "%d\n",
+-			pwr->pwrlevels[pwr->thermal_pwrlevel].gpu_freq);
++
++	if (max_gpu)
++		return snprintf(buf, PAGE_SIZE, "%ld\n",
++				internal_max);
++	else
++		return snprintf(buf, PAGE_SIZE, "%d\n",
++				pwr->pwrlevels[pwr->thermal_pwrlevel].gpu_freq);
+ }
+ 
+ static int kgsl_pwrctrl_gpuclk_store(struct device *dev,
+@@ -479,8 +520,12 @@ static int kgsl_pwrctrl_gpuclk_show(struct device *dev,
+ 	if (device == NULL)
+ 		return 0;
+ 	pwr = &device->pwrctrl;
+-	return snprintf(buf, PAGE_SIZE, "%d\n",
++	if (pwr->active_pwrlevel != 0 || !max_gpu)
++		return snprintf(buf, PAGE_SIZE, "%d\n",
+ 			pwr->pwrlevels[pwr->active_pwrlevel].gpu_freq);
++	else
++		return snprintf(buf, PAGE_SIZE, "%ld\n",
++			internal_max);
+ }
+ 
+ static int kgsl_pwrctrl_idle_timer_store(struct device *dev,
+@@ -626,8 +671,20 @@ static int kgsl_pwrctrl_gpu_available_frequencies_show(
+ 		return 0;
+ 	pwr = &device->pwrctrl;
+ 	for (index = 0; index < pwr->num_pwrlevels - 1; index++)
+-		num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",
+-		pwr->pwrlevels[index].gpu_freq);
++
++		if (index == 0 && max_gpu > 0)
++		{
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",585000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",558000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",531000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",504000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",490500000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",477000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",450000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",409500000);
++		}
++		else
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",pwr->pwrlevels[index].gpu_freq);
+ 	buf[num_chars++] = '\n';
+ 	return num_chars;
+ }

@@ -1,0 +1,30 @@
+Mi2-2s-cm11-EX-kernel-patch
+
+patch功能:
+
+-CPU超频（mi2-1.7G,2s不变)
+-GPU超频（400mhz→450/585mhz)
+-二级缓存L2超频（1134→1242mhz）
+-CPU电压控制（800-1300/mv）
+-GPU电压控制（900-1200/mv）
+-neon的内核模式支持
+-双击/滑动唤醒
+-FauxSound音频控制（V3.6）
+-ARM加密算法优化
+-可调的关屏最大CPU频率（msm-sleeper ver.1.3）
+-额外的CPU/GPU调速器：intelliactive/simple
+-默认降CPU/GPU电压带来更好的续航和降低发热
+（cpu:all pvs ↓-75mv,gpu:LOW/NOMINAL/HIGH 945 1050 1150→900 1000 1150）
+-一些编译优化
+
+
+*部分代码出处：
+@faux123：nexus4（mako）内核，
+@flar2：m7-Sense/ElementalX内核
+@ion-storm：Unleashed-Kernel-Series内核
+
+
+使用方法(Ubuntu下):
+
+1.复制全部文件到kernel源代码根目录覆盖文件（backup目录可以不用）
+2.使用Ctrl+Alt+T打开终端，输入patch -p1 < cm-ex.patch打上补丁即可
