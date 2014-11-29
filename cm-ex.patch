@@ -1,12 +1,12 @@
  Makefile                                           |   4 +-
  arch/arm/Kconfig                                   |   6 +
  arch/arm/Makefile                                  |   2 +-
- arch/arm/configs/cyanogen_aries_defconfig          |  21 +-
+ arch/arm/configs/cyanogen_aries_defconfig          |  24 +-
  arch/arm/include/asm/xor.h                         |  73 +++
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
  arch/arm/mach-msm/Makefile                         |   2 +
- arch/arm/mach-msm/acpuclock-8064.c                 | 328 +++++++------
+ arch/arm/mach-msm/acpuclock-8064.c                 | 326 +++++++------
  arch/arm/mach-msm/acpuclock-krait.c                |  48 ++
  arch/arm/mach-msm/board-8064-regulator.c           |   8 +-
  arch/arm/mach-msm/clock-8960.c                     |  74 ++-
@@ -36,7 +36,7 @@
  sound/soc/codecs/Kconfig                           |  13 +
  sound/soc/codecs/Makefile                          |   5 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 38 files changed, 1615 insertions(+), 213 deletions(-)
+ 38 files changed, 1617 insertions(+), 212 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -86,7 +86,7 @@ index 6bebe17..a81e9e4 100644
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
-index d06fccc..8e9883a 100644
+index d06fccc..839083a 100644
 --- a/arch/arm/configs/cyanogen_aries_defconfig
 +++ b/arch/arm/configs/cyanogen_aries_defconfig
 @@ -44,7 +44,7 @@ CONFIG_IRQ_WORK=y
@@ -138,7 +138,7 @@ index d06fccc..8e9883a 100644
  
  #
  # ARM CPU frequency scaling drivers
-@@ -3453,3 +3455,12 @@ CONFIG_DQL=y
+@@ -3453,3 +3455,15 @@ CONFIG_DQL=y
  CONFIG_NLATTR=y
  # CONFIG_AVERAGE is not set
  # CONFIG_CORDIC is not set
@@ -151,6 +151,9 @@ index d06fccc..8e9883a 100644
 +CONFIG_S2W=y
 +CONFIG_MSM_KGSL_SIMPLE_GOV=y
 +CONFIG_GPU_VOLTAGE_TABLE=y
++CONFIG_MSM_SLEEPER=y
++# CONFIG_SOUND_CONTROL_HAX_GPL is not set
++CONFIG_SOUND_CONTROL_HAX_3_GPL=y
 diff --git a/arch/arm/include/asm/xor.h b/arch/arm/include/asm/xor.h
 index 7604673..4ffb26d 100644
 --- a/arch/arm/include/asm/xor.h
@@ -256,7 +259,7 @@ index 8ade75d..7f92e77 100644
 +  obj-$(CONFIG_XOR_BLOCKS)	+= xor-neon.o
 +endif
 diff --git a/arch/arm/mach-msm/Kconfig b/arch/arm/mach-msm/Kconfig
-index a7464c1..c71130f 100644
+index a7464c1..0a89523 100644
 --- a/arch/arm/mach-msm/Kconfig
 +++ b/arch/arm/mach-msm/Kconfig
 @@ -1634,6 +1634,24 @@ config MSM_CPU_FREQ_MIN
@@ -271,7 +274,7 @@ index a7464c1..c71130f 100644
 +
 +config MSM_SLEEPER
 +	bool "Limit max frequency and shut off cores while screen is off"
-+	default y
++	default n
 +	help
 +	  Limit max frequency and shut off cores while screen is off
 +
@@ -295,16 +298,10 @@ index debe164..7e9c125 100644
 +
 +obj-$(CONFIG_MSM_SLEEPER) += msm-sleeper.o
 diff --git a/arch/arm/mach-msm/acpuclock-8064.c b/arch/arm/mach-msm/acpuclock-8064.c
-index 8262946..87394a4 100644
+index 8262946..2e56890 100644
 --- a/arch/arm/mach-msm/acpuclock-8064.c
 +++ b/arch/arm/mach-msm/acpuclock-8064.c
-@@ -130,37 +130,11 @@ static struct l2_level l2_freq_tbl[] __initdata = {
- 	[11] = { {  972000, HFPLL, 1, 0x24 }, 1150000, 1150000, 5 },
- 	[12] = { { 1026000, HFPLL, 1, 0x26 }, 1150000, 1150000, 5 },
- 	[13] = { { 1080000, HFPLL, 1, 0x28 }, 1150000, 1150000, 5 },
--	[14] = { { 1134000, HFPLL, 1, 0x2A }, 1150000, 1150000, 5 },
-+	[14] = { { 1242000, HFPLL, 1, 0x2E }, 1150000, 1150000, 5 },
- 	{ }
+@@ -135,32 +135,6 @@ static struct l2_level l2_freq_tbl[] __initdata = {
  };
  
  static struct acpu_level tbl_slow[] __initdata = {
@@ -948,7 +945,7 @@ index aeb1c5e..931df11 100644
  		struct pll_config_regs *regs, u32 ena_fsm_mode)
  {
 diff --git a/arch/arm/mach-msm/cpufreq.c b/arch/arm/mach-msm/cpufreq.c
-index 72ed4f0..eadc05c 100644
+index 72ed4f0..fce6d0e 100644
 --- a/arch/arm/mach-msm/cpufreq.c
 +++ b/arch/arm/mach-msm/cpufreq.c
 @@ -36,6 +36,10 @@
@@ -957,7 +954,7 @@ index 72ed4f0..eadc05c 100644
  
 +/* maxscroff */
 +uint32_t maxscroff_freq = 702000;
-+uint32_t maxscroff = 1;
++uint32_t maxscroff = 0;
 +
  static DEFINE_MUTEX(l2bw_lock);
  
@@ -1593,7 +1590,7 @@ index 1893405..1ce8f16 100644
 +ccflags-y := -O2 -mcpu=cortex-a15 -mfpu=neon-vfpv4 -ftree-vectorize
  obj-y += msm_ion.o ion_cp_common.o
 diff --git a/drivers/gpu/msm/Kconfig b/drivers/gpu/msm/Kconfig
-index ba63fbc..b0c76a0 100644
+index ba63fbc..96a935d 100644
 --- a/drivers/gpu/msm/Kconfig
 +++ b/drivers/gpu/msm/Kconfig
 @@ -96,3 +96,11 @@ config MSM_KGSL_DISABLE_SHADOW_WRITES
@@ -1603,7 +1600,7 @@ index ba63fbc..b0c76a0 100644
 +
 +config MSM_KGSL_SIMPLE_GOV
 +	bool "Simple KGSL GPU govenor for Qualcomm Adreno xxx devices"
-+	default y
++	default n
 +	depends on MSM_KGSL
 +	---help---
 +	  A simple KGSL GPU govenor for Qualcom Adreno XXX devices
@@ -2580,7 +2577,7 @@ index 508bf3b..40e3a83 100644
  		u8 val);
  int wcd9xxx_interface_reg_read(struct wcd9xxx *wcd9xxx, unsigned short reg);
 diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
-index 025e863..c975c91 100644
+index 025e863..c059a18 100644
 --- a/sound/soc/codecs/Kconfig
 +++ b/sound/soc/codecs/Kconfig
 @@ -461,3 +461,16 @@ config SND_SOC_ES310
@@ -2596,7 +2593,7 @@ index 025e863..c975c91 100644
 +
 +config SOUND_CONTROL_HAX_3_GPL
 +	tristate "new wcd93xx sound control hax"
-+	default y
++	default n
 +	help
 +	  FauxSound WCD93xx chipset sound control hacks 3.0 for deeper hax
 +
