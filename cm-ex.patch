@@ -6,15 +6,15 @@
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
  arch/arm/mach-msm/Makefile                         |   2 +
- arch/arm/mach-msm/acpuclock-8064.c                 | 326 +++++++------
- arch/arm/mach-msm/acpuclock-krait.c                |  48 ++
- arch/arm/mach-msm/board-8064-regulator.c           |   8 +-
- arch/arm/mach-msm/clock-8960.c                     |  74 ++-
- arch/arm/mach-msm/clock-pll.c                      |  36 ++
+ arch/arm/mach-msm/acpuclock-8064.c                 | 332 +++++++------
+ arch/arm/mach-msm/acpuclock-krait.c                |  49 ++
+ arch/arm/mach-msm/board-8064-regulator.c           |  10 +-
+ arch/arm/mach-msm/clock-8960.c                     |  81 ++-
+ arch/arm/mach-msm/clock-pll.c                      |  37 ++
  arch/arm/mach-msm/cpufreq.c                        |  79 +++
  arch/arm/mach-msm/include/mach/kgsl.h              |   2 +
- arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c   |  27 +-
- .../mach-msm/xiaomi/aries/board-aries-regulator.c  |   8 +-
+ arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c   |  28 +-
+ .../mach-msm/xiaomi/aries/board-aries-regulator.c  |  10 +-
  arch/arm/vfp/Makefile                              |   2 +-
  arch/arm/vfp/vfphw.S                               |   5 +
  arch/arm/vfp/vfpmodule.c                           |  81 ++-
@@ -26,17 +26,17 @@
  drivers/gpu/ion/msm/Makefile                       |   1 +
  drivers/gpu/msm/Kconfig                            |   8 +
  drivers/gpu/msm/Makefile                           |   2 +-
- drivers/gpu/msm/kgsl_pwrctrl.c                     |  67 ++-
+ drivers/gpu/msm/kgsl_pwrctrl.c                     |  69 ++-
  drivers/gpu/msm/kgsl_pwrscale_trustzone.c          |  76 +++
  drivers/input/touchscreen/Kconfig                  |   6 +
- drivers/input/touchscreen/atmel_mxt_ts.c           | 541 +++++++++++++++++++++
+ drivers/input/touchscreen/atmel_mxt_ts.c           | 542 +++++++++++++++++++++
  drivers/mfd/wcd9xxx-core.c                         |  16 +
  include/linux/cpufreq.h                            |   3 +
  include/linux/mfd/wcd9xxx/core.h                   |   3 +
  sound/soc/codecs/Kconfig                           |  13 +
  sound/soc/codecs/Makefile                          |   5 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 38 files changed, 1617 insertions(+), 212 deletions(-)
+ 38 files changed, 1638 insertions(+), 214 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -86,7 +86,7 @@ index 6bebe17..a81e9e4 100644
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
-index d06fccc..839083a 100644
+index d06fccc..dd15282 100644
 --- a/arch/arm/configs/cyanogen_aries_defconfig
 +++ b/arch/arm/configs/cyanogen_aries_defconfig
 @@ -44,7 +44,7 @@ CONFIG_IRQ_WORK=y
@@ -122,29 +122,13 @@ index d06fccc..839083a 100644
  # CONFIG_INLINE_SPIN_TRYLOCK is not set
  # CONFIG_INLINE_SPIN_TRYLOCK_BH is not set
  # CONFIG_INLINE_SPIN_LOCK is not set
-@@ -711,6 +711,7 @@ CONFIG_CPU_FREQ_TABLE=y
- CONFIG_CPU_FREQ_STAT=y
- # CONFIG_CPU_FREQ_STAT_DETAILS is not set
- CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y
-+# CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE is not set
- # CONFIG_CPU_FREQ_DEFAULT_GOV_POWERSAVE is not set
- # CONFIG_CPU_FREQ_DEFAULT_GOV_USERSPACE is not set
- # CONFIG_CPU_FREQ_DEFAULT_GOV_ONDEMAND is not set
-@@ -722,6 +723,7 @@ CONFIG_CPU_FREQ_GOV_USERSPACE=y
- CONFIG_CPU_FREQ_GOV_ONDEMAND=y
- CONFIG_CPU_FREQ_GOV_INTERACTIVE=y
- CONFIG_CPU_FREQ_GOV_CONSERVATIVE=y
-+CONFIG_CPU_FREQ_GOV_INTELLIACTIVE=y
- 
- #
- # ARM CPU frequency scaling drivers
-@@ -3453,3 +3455,15 @@ CONFIG_DQL=y
+@@ -3453,3 +3453,17 @@ CONFIG_DQL=y
  CONFIG_NLATTR=y
  # CONFIG_AVERAGE is not set
  # CONFIG_CORDIC is not set
 +
 +#
-+# EX
++# EX Config
 +#
 +CONFIG_KERNEL_MODE_NEON=y
 +CONFIG_CPU_VOLTAGE_TABLE=y
@@ -154,6 +138,8 @@ index d06fccc..839083a 100644
 +CONFIG_MSM_SLEEPER=y
 +# CONFIG_SOUND_CONTROL_HAX_GPL is not set
 +CONFIG_SOUND_CONTROL_HAX_3_GPL=y
++CONFIG_CPU_FREQ_GOV_INTELLIACTIVE=y
++# CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE is not set
 diff --git a/arch/arm/include/asm/xor.h b/arch/arm/include/asm/xor.h
 index 7604673..4ffb26d 100644
 --- a/arch/arm/include/asm/xor.h
@@ -298,12 +284,30 @@ index debe164..7e9c125 100644
 +
 +obj-$(CONFIG_MSM_SLEEPER) += msm-sleeper.o
 diff --git a/arch/arm/mach-msm/acpuclock-8064.c b/arch/arm/mach-msm/acpuclock-8064.c
-index 8262946..2e56890 100644
+index 8262946..bd314e7 100644
 --- a/arch/arm/mach-msm/acpuclock-8064.c
 +++ b/arch/arm/mach-msm/acpuclock-8064.c
-@@ -135,32 +135,6 @@ static struct l2_level l2_freq_tbl[] __initdata = {
+@@ -98,6 +98,7 @@ static struct scalable scalable[] __initdata = {
+ /*
+  * The correct maximum rate for 8064ab in 600 MHZ.
+  * We rely on the RPM rounding requests up here.
++ * bus(前端总线)频率
+ */
+ static struct msm_bus_paths bw_level_tbl[] __initdata = {
+ 	[0] =  BW_MBPS(640), /* At least  80 MHz on bus. */
+@@ -115,6 +116,7 @@ static struct msm_bus_scale_pdata bus_scale_data __initdata = {
+ 	.name = "acpuclk-8064",
  };
  
++/* l2(二级缓存)频率 */
+ static struct l2_level l2_freq_tbl[] __initdata = {
+ 	[0]  = { {  384000, PLL_8, 0, 0x00 },  950000, 1050000, 1 },
+ 	[1]  = { {  432000, HFPLL, 2, 0x20 }, 1050000, 1050000, 2 },
+@@ -134,33 +136,8 @@ static struct l2_level l2_freq_tbl[] __initdata = {
+ 	{ }
+ };
+ 
++/* 8064各体质频率 */
  static struct acpu_level tbl_slow[] __initdata = {
 -	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   950000 },
 -	{ 0, {   432000, HFPLL, 2, 0x20 }, L2(5),   975000 },
@@ -334,7 +338,7 @@ index 8262946..2e56890 100644
  	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   900000 },
  	{ 0, {   432000, HFPLL, 2, 0x20 }, L2(5),   925000 },
  	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   925000 },
-@@ -183,45 +157,21 @@ static struct acpu_level tbl_nom[] __initdata = {
+@@ -183,45 +160,21 @@ static struct acpu_level tbl_nom[] __initdata = {
  	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1187500 },
  	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1187500 },
  	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1200000 },
@@ -392,7 +396,7 @@ index 8262946..2e56890 100644
  	{ 0, {   864000, HFPLL, 1, 0x20 }, L2(5),   975000 },
  	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   975000 },
  	{ 0, {   972000, HFPLL, 1, 0x24 }, L2(5),  1000000 },
-@@ -235,6 +185,64 @@ static struct acpu_level tbl_faster[] __initdata = {
+@@ -235,6 +188,64 @@ static struct acpu_level tbl_faster[] __initdata = {
  	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1112500 },
  	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1112500 },
  	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1125000 },
@@ -457,9 +461,11 @@ index 8262946..2e56890 100644
  	{ 0, { 0 } }
  };
  
-@@ -351,128 +359,128 @@ static struct acpu_level tbl_PVS6_1512MHz[] __initdata = {
+@@ -350,132 +361,134 @@ static struct acpu_level tbl_PVS6_1512MHz[] __initdata = {
+ 	{ 0, { 0 } }
  };
  
++/* 8064T各体质频率 */
  static struct acpu_level tbl_PVS0_1700MHz[] __initdata = {
 -	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   950000 },
 -	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   950000 },
@@ -683,14 +689,27 @@ index 8262946..2e56890 100644
  	{ 0, { 0 } }
  };
  
++/* 8064AB各体质频率 */
+ static struct acpu_level tbl_PVS0_2000MHz[] __initdata = {
+ 	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   950000 },
+ 	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   950000 },
+@@ -609,6 +622,7 @@ static struct acpu_level tbl_PVS6_2000MHz[] __initdata = {
+ 	{ 0, { 0 } }
+ };
+ 
++/* 跟据speed_bin和pvs来选择频率表，最后一个值为boost_uv(动态浮动电压) */
+ static struct pvs_table pvs_tables[NUM_SPEED_BINS][NUM_PVS] __initdata = {
+ 	[0][PVS_SLOW]    = {tbl_slow, sizeof(tbl_slow),     0 },
+ 	[0][PVS_NOMINAL] = {tbl_nom,  sizeof(tbl_nom),  25000 },
 diff --git a/arch/arm/mach-msm/acpuclock-krait.c b/arch/arm/mach-msm/acpuclock-krait.c
-index e3a3f54..07db953 100644
+index e3a3f54..fe88704 100644
 --- a/arch/arm/mach-msm/acpuclock-krait.c
 +++ b/arch/arm/mach-msm/acpuclock-krait.c
-@@ -912,6 +912,54 @@ static void __init bus_init(const struct l2_level *l2_level)
+@@ -912,6 +912,55 @@ static void __init bus_init(const struct l2_level *l2_level)
  		dev_err(drv.dev, "initial bandwidth req failed (%d)\n", ret);
  }
  
++/* cpu电压控制 */
 +#ifdef CONFIG_CPU_VOLTAGE_TABLE
 +
 +#define HFPLL_MIN_VDD		 800000
@@ -743,41 +762,49 @@ index e3a3f54..07db953 100644
  static struct cpufreq_frequency_table freq_table[NR_CPUS][35];
  
 diff --git a/arch/arm/mach-msm/board-8064-regulator.c b/arch/arm/mach-msm/board-8064-regulator.c
-index b06599c..ade22ab 100644
+index b06599c..b1737116 100644
 --- a/arch/arm/mach-msm/board-8064-regulator.c
 +++ b/arch/arm/mach-msm/board-8064-regulator.c
-@@ -574,15 +574,15 @@ mpq8064_gpio_regulator_pdata[] __devinitdata = {
- /* SAW regulator constraints */
+@@ -571,18 +571,18 @@ mpq8064_gpio_regulator_pdata[] __devinitdata = {
+ 					SX150X_GPIO(4, 15), "avc_5v"),
+ };
+ 
+-/* SAW regulator constraints */
++/* SAW regulator constraints 主板CPU接口电压 */
  struct regulator_init_data msm8064_saw_regulator_pdata_8921_s5 =
  	/*	      ID  vreg_name	       min_uV   max_uV */
 -	SAW_VREG_INIT(S5, "8921_s5",	       850000, 1300000);
-+	SAW_VREG_INIT(S5, "8921_s5",	       800000, 1300000);
++	SAW_VREG_INIT(S5, "8921_s5",	       775000, 1300000);
  struct regulator_init_data msm8064_saw_regulator_pdata_8921_s6 =
 -	SAW_VREG_INIT(S6, "8921_s6",	       850000, 1300000);
-+	SAW_VREG_INIT(S6, "8921_s6",	       800000, 1300000);
++	SAW_VREG_INIT(S6, "8921_s6",	       775000, 1300000);
  
  struct regulator_init_data msm8064_saw_regulator_pdata_8821_s0 =
  	/*	      ID       vreg_name	min_uV  max_uV */
 -	SAW_VREG_INIT(8821_S0, "8821_s0",       850000, 1300000);
-+	SAW_VREG_INIT(8821_S0, "8821_s0",       800000, 1300000);
++	SAW_VREG_INIT(8821_S0, "8821_s0",       775000, 1300000);
  struct regulator_init_data msm8064_saw_regulator_pdata_8821_s1 =
 -	SAW_VREG_INIT(8821_S1, "8821_s1",       850000, 1300000);
-+	SAW_VREG_INIT(8821_S1, "8821_s1",       800000, 1300000);
++	SAW_VREG_INIT(8821_S1, "8821_s1",       775000, 1300000);
  
  /* PM8921 regulator constraints */
  struct pm8xxx_regulator_platform_data
 diff --git a/arch/arm/mach-msm/clock-8960.c b/arch/arm/mach-msm/clock-8960.c
-index 7b20003..3f260c5 100644
+index 7b20003..4896eb5 100644
 --- a/arch/arm/mach-msm/clock-8960.c
 +++ b/arch/arm/mach-msm/clock-8960.c
-@@ -380,8 +380,49 @@ enum vdd_dig_levels {
+@@ -380,8 +380,53 @@ enum vdd_dig_levels {
  	VDD_DIG_NUM
  };
  
++
++/* GPU电压控制 */
 +#ifdef CONFIG_GPU_VOLTAGE_TABLE
 +#define GPU_MIN_VDD           900
 +#define GPU_MAX_VDD          1200
 +
++/* low=128mhz nominal=320mhz high=450mhz
++详见fmax_gfx3d_8064[VDD_DIG_NUM] */
 +static int vdd_uv[] = {
 +  [VDD_DIG_NONE]    =       0,
 +  [VDD_DIG_LOW]     =  900000,
@@ -820,7 +847,7 @@ index 7b20003..3f260c5 100644
  	static const int vdd_uv[] = {
  		[VDD_DIG_NONE]    =       0,
  		[VDD_DIG_LOW]     =  945000,
-@@ -390,6 +431,7 @@ static int set_vdd_dig_8960(struct clk_vdd_class *vdd_class, int level)
+@@ -390,6 +435,7 @@ static int set_vdd_dig_8960(struct clk_vdd_class *vdd_class, int level)
  	};
  	return rpm_vreg_set_voltage(RPM_VREG_ID_PM8921_S3, RPM_VREG_VOTER3,
  				    vdd_uv[level], 1150000, 1);
@@ -828,7 +855,7 @@ index 7b20003..3f260c5 100644
  }
  
  static DEFINE_VDD_CLASS(vdd_dig, set_vdd_dig_8960, VDD_DIG_NUM);
-@@ -3532,7 +3574,14 @@ static struct clk_freq_tbl clk_tbl_gfx3d[] = {
+@@ -3532,7 +3578,14 @@ static struct clk_freq_tbl clk_tbl_gfx3d[] = {
  	F_GFX3D(266667000, pll2,  1,  3),
  	F_GFX3D(320000000, pll2,  2,  5),
  	F_GFX3D(400000000, pll2,  1,  2),
@@ -843,7 +870,7 @@ index 7b20003..3f260c5 100644
  	F_END
  };
  
-@@ -3587,8 +3636,8 @@ static unsigned long fmax_gfx3d_8064ab[VDD_DIG_NUM] = {
+@@ -3587,8 +3640,8 @@ static unsigned long fmax_gfx3d_8064ab[VDD_DIG_NUM] = {
  
  static unsigned long fmax_gfx3d_8064[VDD_DIG_NUM] = {
  	[VDD_DIG_LOW]     = 128000000,
@@ -854,21 +881,24 @@ index 7b20003..3f260c5 100644
  };
  
  static unsigned long fmax_gfx3d_8930[VDD_DIG_NUM] = {
-@@ -6336,7 +6385,7 @@ static struct pll_config pll4_config_393 __initdata = {
+@@ -6336,7 +6389,9 @@ static struct pll_config pll4_config_393 __initdata = {
  	.main_output_mask = BIT(23),
  };
  
 -static struct pll_config_regs pll15_regs __initdata = {
++
++/* 修改pll15结构名称 */
 +static struct pll_config_regs pll15_regs = {
  	.l_reg = MM_PLL3_L_VAL_REG,
  	.m_reg = MM_PLL3_M_VAL_REG,
  	.n_reg = MM_PLL3_N_VAL_REG,
-@@ -6344,10 +6393,10 @@ static struct pll_config_regs pll15_regs __initdata = {
+@@ -6344,10 +6399,11 @@ static struct pll_config_regs pll15_regs __initdata = {
  	.mode_reg = MM_PLL3_MODE_REG,
  };
  
 -static struct pll_config pll15_config __initdata = {
 -	.l = (0x24 | BVAL(31, 7, 0x620)),
++/* 修改pll15结构名称&n值 */
 +static struct pll_config pll15_config = {
 +	.l = (0x21 | BVAL(31, 7, 0x620)),
  	.m = 0x1,
@@ -877,12 +907,12 @@ index 7b20003..3f260c5 100644
  	.vco_val = BVAL(17, 16, 0x2),
  	.vco_mask = BM(17, 16),
  	.pre_div_val = 0x0,
-@@ -6601,6 +6650,19 @@ static void __init reg_init(void)
+@@ -6601,6 +6657,19 @@ static void __init reg_init(void)
  	}
  }
  
 +//GPU_OC
-+
++/* 创建pll超频方法 */
 +extern void configure_pllOC(struct pll_config *config, struct pll_config_regs *regs, u32 ena_fsm_mode);
 +
 +void __ref SetGPUpll_config(u32 loc, unsigned long freq)
@@ -898,14 +928,15 @@ index 7b20003..3f260c5 100644
  static void __init msm8960_clock_pre_init(void)
  {
 diff --git a/arch/arm/mach-msm/clock-pll.c b/arch/arm/mach-msm/clock-pll.c
-index aeb1c5e..931df11 100644
+index aeb1c5e..ecb5826 100644
 --- a/arch/arm/mach-msm/clock-pll.c
 +++ b/arch/arm/mach-msm/clock-pll.c
-@@ -501,6 +501,42 @@ void __init __configure_pll(struct pll_config *config,
+@@ -501,6 +501,43 @@ void __init __configure_pll(struct pll_config *config,
  	writel_relaxed(regval, PLL_CONFIG_REG(regs));
  }
  
 +//GPU_OC
++/* 设置pll值 */
 +void configure_pllOC(struct pll_config *config,
 +    struct pll_config_regs *regs, u32 ena_fsm_mode)
 +{
@@ -1057,7 +1088,7 @@ index 2d7e8df..fc9ab5e 100644
  	KGSL_IOMMU_CONTEXT_USER = 0,
  	KGSL_IOMMU_CONTEXT_PRIV = 1,
 diff --git a/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c b/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
-index 23a00d2..3d46a07 100644
+index 23a00d2..024bf31 100644
 --- a/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
 +++ b/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
 @@ -22,6 +22,8 @@
@@ -1069,7 +1100,13 @@ index 23a00d2..3d46a07 100644
  #ifdef CONFIG_MSM_DCVS
  static struct msm_dcvs_freq_entry grp3d_freq[] = {
  	{0, 900, 0, 0, 0},
-@@ -93,13 +95,13 @@ static struct msm_bus_vectors grp3d_low_vectors[] = {
+@@ -88,18 +90,19 @@ static struct msm_bus_vectors grp3d_init_vectors[] = {
+ 	},
+ };
+ 
++/* gpu带宽，单位mbps */
+ static struct msm_bus_vectors grp3d_low_vectors[] = {
+ 	{
  		.src = MSM_BUS_MASTER_GRAPHICS_3D,
  		.dst = MSM_BUS_SLAVE_EBI_CH0,
  		.ab = 0,
@@ -1085,7 +1122,7 @@ index 23a00d2..3d46a07 100644
  	},
  };
  
-@@ -227,7 +229,7 @@ static struct kgsl_device_iommu_data kgsl_3d0_iommu_data[] = {
+@@ -227,7 +230,7 @@ static struct kgsl_device_iommu_data kgsl_3d0_iommu_data[] = {
  static struct kgsl_device_platform_data kgsl_3d0_pdata = {
  	.pwrlevel = {
  		{
@@ -1094,7 +1131,7 @@ index 23a00d2..3d46a07 100644
  			.bus_freq = 4,
  			.io_fraction = 0,
  		},
-@@ -277,12 +279,29 @@ struct platform_device device_kgsl_3d0 = {
+@@ -277,12 +280,29 @@ struct platform_device device_kgsl_3d0 = {
  	},
  };
  
@@ -1126,11 +1163,15 @@ index 23a00d2..3d46a07 100644
  		kgsl_3d0_pdata.chipid = ADRENO_CHIPID(3, 2, 0, 2);
  	} else {
 diff --git a/arch/arm/mach-msm/xiaomi/aries/board-aries-regulator.c b/arch/arm/mach-msm/xiaomi/aries/board-aries-regulator.c
-index 19d7b7d..2381cfb 100644
+index 19d7b7d..ce2b722 100644
 --- a/arch/arm/mach-msm/xiaomi/aries/board-aries-regulator.c
 +++ b/arch/arm/mach-msm/xiaomi/aries/board-aries-regulator.c
-@@ -545,15 +545,15 @@ mpq8064_gpio_regulator_pdata[] __devinitdata = {
- /* SAW regulator constraints */
+@@ -542,18 +542,18 @@ mpq8064_gpio_regulator_pdata[] __devinitdata = {
+ 					SX150X_GPIO(4, 15), "avc_5v"),
+ };
+ 
+-/* SAW regulator constraints */
++/* SAW regulator constraints 主板CPU接口电压(mi2) */
  struct regulator_init_data msm8064_saw_regulator_pdata_8921_s5 =
  	/*	      ID  vreg_name	       min_uV   max_uV */
 -	SAW_VREG_INIT(S5, "8921_s5",	       850000, 1300000);
@@ -1616,7 +1657,7 @@ index 895235f..8f31021 100644
  msm_kgsl_core-y = \
  	kgsl.o \
 diff --git a/drivers/gpu/msm/kgsl_pwrctrl.c b/drivers/gpu/msm/kgsl_pwrctrl.c
-index 7ee305f..b6477f6 100644
+index 7ee305f..7872c3a 100644
 --- a/drivers/gpu/msm/kgsl_pwrctrl.c
 +++ b/drivers/gpu/msm/kgsl_pwrctrl.c
 @@ -19,6 +19,7 @@
@@ -1636,16 +1677,17 @@ index 7ee305f..b6477f6 100644
  struct clk_pair {
  	const char *name;
  	uint map;
-@@ -391,6 +394,8 @@ static int _get_nearest_pwrlevel(struct kgsl_pwrctrl *pwr, unsigned int clock)
+@@ -391,6 +394,9 @@ static int _get_nearest_pwrlevel(struct kgsl_pwrctrl *pwr, unsigned int clock)
  	return -ERANGE;
  }
  
 +extern void SetGPUpll_config(u32 loc, unsigned long freq);
 +
++/* 使pll15的值跟据gpu频率进行自适应 */
  static int kgsl_pwrctrl_max_gpuclk_store(struct device *dev,
  					 struct device_attribute *attr,
  					 const char *buf, size_t count)
-@@ -409,6 +414,37 @@ static int kgsl_pwrctrl_max_gpuclk_store(struct device *dev,
+@@ -409,6 +415,37 @@ static int kgsl_pwrctrl_max_gpuclk_store(struct device *dev,
  	if (ret != 1)
  		return count;
  
@@ -1683,7 +1725,7 @@ index 7ee305f..b6477f6 100644
  	mutex_lock(&device->mutex);
  	level = _get_nearest_pwrlevel(pwr, val);
  	if (level < 0)
-@@ -439,8 +475,13 @@ static int kgsl_pwrctrl_max_gpuclk_show(struct device *dev,
+@@ -439,8 +476,13 @@ static int kgsl_pwrctrl_max_gpuclk_show(struct device *dev,
  	if (device == NULL)
  		return 0;
  	pwr = &device->pwrctrl;
@@ -1699,7 +1741,7 @@ index 7ee305f..b6477f6 100644
  }
  
  static int kgsl_pwrctrl_gpuclk_store(struct device *dev,
-@@ -479,8 +520,12 @@ static int kgsl_pwrctrl_gpuclk_show(struct device *dev,
+@@ -479,8 +521,12 @@ static int kgsl_pwrctrl_gpuclk_show(struct device *dev,
  	if (device == NULL)
  		return 0;
  	pwr = &device->pwrctrl;
@@ -1713,7 +1755,15 @@ index 7ee305f..b6477f6 100644
  }
  
  static int kgsl_pwrctrl_idle_timer_store(struct device *dev,
-@@ -626,8 +671,20 @@ static int kgsl_pwrctrl_gpu_available_frequencies_show(
+@@ -613,6 +659,7 @@ static int kgsl_pwrctrl_gputop_show(struct device *dev,
+ 	return (unsigned int) (ptr - buf);
+ }
+ 
++/* 增加gpu频率表的频率档次 */
+ static int kgsl_pwrctrl_gpu_available_frequencies_show(
+ 					struct device *dev,
+ 					struct device_attribute *attr,
+@@ -626,8 +673,20 @@ static int kgsl_pwrctrl_gpu_available_frequencies_show(
  		return 0;
  	pwr = &device->pwrctrl;
  	for (index = 0; index < pwr->num_pwrlevels - 1; index++)
@@ -1879,7 +1929,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index d89415a..0a8e7a8 100644
+index d89415a..637c948 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -1919,28 +1969,29 @@ index d89415a..0a8e7a8 100644
  /* Firmware */
  #define MXT_FW_NAME		"maxtouch.fw"
  
-@@ -317,6 +347,20 @@ enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
+@@ -317,6 +347,21 @@ enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
  
  #define MXT_MAX_FINGER		16
  
++/* 双击/滑动唤醒 */
 +#ifdef CONFIG_S2W
 +
-+#define DT2W_ENABLED 1
-+#define DT2W_TIMEOUT_MAX 400
-+#define DT2W_TIMEOUT_MIN 100
-+#define DT2W_DELTA_X 60
-+#define DT2W_DELTA_Y 60
++#define DT2W_ENABLED 1 /* 默认是否启用 */
++#define DT2W_TIMEOUT_MAX 400 /* 两次点击的最大时间间隔 */
++#define DT2W_TIMEOUT_MIN 100 /* 两次点击的最小时间间隔 */
++#define DT2W_DELTA_X 60 /* 点击的横向分辨率大小 */
++#define DT2W_DELTA_Y 60 /* 点击的纵向分辨率大小 */
 +
-+#define S2W_ENABLED 1
-+#define S2W_START -1
-+#define S2W_END -1
++#define S2W_ENABLED 1 /* 默认是否启用 */
++#define S2W_START -1 /* 滑动唤醒起始坐标 */
++#define S2W_END -1 /* 结束坐标 */
 +
 +#endif
 +
  #define T7_DATA_SIZE		3
  #define T8_DATA_SIZE		10
  #define MXT_MAX_RW_TRIES	3
-@@ -422,8 +466,340 @@ struct mxt_data {
+@@ -422,8 +467,340 @@ struct mxt_data {
  	bool is_crc_got;
  	bool is_key_verify;
  	bool disable_keys;
@@ -2281,7 +2332,7 @@ index d89415a..0a8e7a8 100644
  static struct dentry *debug_base;
  
  static bool mxt_object_writable(unsigned int type)
-@@ -1227,9 +1603,23 @@ static irqreturn_t mxt_interrupt(int irq, void *dev_id)
+@@ -1227,9 +1604,23 @@ static irqreturn_t mxt_interrupt(int irq, void *dev_id)
  		/* check whether report id is part of T9 or T15 */
  		id = reportid - data->t9_min_reportid;
  
@@ -2305,7 +2356,7 @@ index d89415a..0a8e7a8 100644
  		else if (reportid >= data->t15_min_reportid &&
  					reportid <= data->t15_max_reportid)
  			mxt_handle_key_array(data, &message);
-@@ -1788,7 +2178,11 @@ static int mxt_initialize(struct mxt_data *data)
+@@ -1788,7 +2179,11 @@ static int mxt_initialize(struct mxt_data *data)
  		error = mxt_update_fw_for_abnormal(data, BOOTLOADER_MODE);
  		if (error)
  			return error;
@@ -2317,7 +2368,7 @@ index d89415a..0a8e7a8 100644
  	}
  
  	dev_info(&client->dev,
-@@ -1856,7 +2250,11 @@ static int mxt_initialize(struct mxt_data *data)
+@@ -1856,7 +2251,11 @@ static int mxt_initialize(struct mxt_data *data)
  		error = mxt_update_fw_for_abnormal(data, NO_CONFIG_MODE);
  		if (error)
  			return error;
@@ -2329,7 +2380,7 @@ index d89415a..0a8e7a8 100644
  	}
  
  	error = __mxt_read_reg(client, data->t7_start_addr,
-@@ -1890,6 +2288,34 @@ static int mxt_initialize(struct mxt_data *data)
+@@ -1890,6 +2289,34 @@ static int mxt_initialize(struct mxt_data *data)
  			"Matrix X Size: %d Matrix Y Size: %d\n",
  			info->matrix_xsize, info->matrix_ysize);
  
@@ -2364,7 +2415,7 @@ index d89415a..0a8e7a8 100644
  	return 0;
  
  free_object_table:
-@@ -2179,6 +2605,18 @@ static ssize_t mxt_update_fw_store(struct device *dev,
+@@ -2179,6 +2606,18 @@ static ssize_t mxt_update_fw_store(struct device *dev,
  	u8 bootldr_id;
  	struct input_dev *input_dev = data->input_dev;
  
@@ -2383,7 +2434,7 @@ index d89415a..0a8e7a8 100644
  	if (count > 0) {
  		fw_name = buf;
  		dev_info(dev, "Identify firmware name :%s \n", fw_name);
-@@ -2866,6 +3304,18 @@ static int mxt_suspend(struct device *dev)
+@@ -2866,6 +3305,18 @@ static int mxt_suspend(struct device *dev)
  	struct input_dev *input_dev = data->input_dev;
  	int error;
  
@@ -2402,7 +2453,7 @@ index d89415a..0a8e7a8 100644
  	disable_irq(data->irq);
  
  	mutex_lock(&input_dev->mutex);
-@@ -2907,6 +3357,20 @@ static int mxt_resume(struct device *dev)
+@@ -2907,6 +3358,20 @@ static int mxt_resume(struct device *dev)
  	struct input_dev *input_dev = data->input_dev;
  	int error;
  
@@ -2423,7 +2474,7 @@ index d89415a..0a8e7a8 100644
  	/* put regulators in high power mode */
  	error = mxt_regulator_lpm(data, false);
  	if (error < 0) {
-@@ -3241,6 +3705,57 @@ static int __devinit mxt_probe(struct i2c_client *client,
+@@ -3241,6 +3706,57 @@ static int __devinit mxt_probe(struct i2c_client *client,
  	if (error)
  		goto err_unregister_device;
  
@@ -2481,7 +2532,7 @@ index d89415a..0a8e7a8 100644
  #if defined(CONFIG_HAS_EARLYSUSPEND)
  	data->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN +
  						MXT_SUSPEND_LEVEL;
-@@ -3271,6 +3786,25 @@ static int __devinit mxt_probe(struct i2c_client *client,
+@@ -3271,6 +3787,25 @@ static int __devinit mxt_probe(struct i2c_client *client,
  	mxt_handle_extra_touchdata(data, MXT_REFERENCE_DATA);
  	return 0;
  
@@ -2507,7 +2558,7 @@ index d89415a..0a8e7a8 100644
  err_remove_sysfs_group:
  	sysfs_remove_group(&client->dev.kobj, &mxt_attr_group);
  err_unregister_device:
-@@ -3311,6 +3845,13 @@ static int __devexit mxt_remove(struct i2c_client *client)
+@@ -3311,6 +3846,13 @@ static int __devexit mxt_remove(struct i2c_client *client)
  	cancel_delayed_work_sync(&data->force_calibrate_delayed_work);
  	cancel_delayed_work_sync(&data->disable_antipalm_delayed_work);
  	free_irq(data->irq, data);
