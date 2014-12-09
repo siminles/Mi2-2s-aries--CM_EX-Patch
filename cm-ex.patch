@@ -1,7 +1,6 @@
  Makefile                                           |   4 +-
  arch/arm/Kconfig                                   |   6 +
  arch/arm/Makefile                                  |   2 +-
- arch/arm/configs/cyanogen_ex_aries_defconfig       |  24 +-
  arch/arm/include/asm/xor.h                         |  73 +++
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
@@ -36,7 +35,7 @@
  sound/soc/codecs/Kconfig                           |  13 +
  sound/soc/codecs/Makefile                          |   5 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 38 files changed, 1638 insertions(+), 214 deletions(-)
+ 37 files changed, 1619 insertions(+), 209 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -85,61 +84,6 @@ index 6bebe17..a81e9e4 100644
  
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
-diff --git a/arch/arm/configs/cyanogen_ex_aries_defconfig b/arch/arm/configs/cyanogen_ex_aries_defconfig
-index d06fccc..dd15282 100644
---- a/arch/arm/configs/cyanogen_ex_aries_defconfig
-+++ b/arch/arm/configs/cyanogen_ex_aries_defconfig
-@@ -44,7 +44,7 @@ CONFIG_IRQ_WORK=y
- CONFIG_EXPERIMENTAL=y
- CONFIG_INIT_ENV_ARG_LIMIT=32
- CONFIG_CROSS_COMPILE=""
--CONFIG_LOCALVERSION="-cyanogenmod"
-+CONFIG_LOCALVERSION="-cyanogenmod-EX"
- CONFIG_LOCALVERSION_AUTO=y
- CONFIG_HAVE_KERNEL_GZIP=y
- CONFIG_HAVE_KERNEL_LZMA=y
-@@ -124,7 +124,7 @@ CONFIG_RD_GZIP=y
- # CONFIG_RD_LZMA is not set
- # CONFIG_RD_XZ is not set
- # CONFIG_RD_LZO is not set
--CONFIG_CC_OPTIMIZE_FOR_SIZE=y
-+# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
- CONFIG_SYSCTL=y
- CONFIG_ANON_INODES=y
- CONFIG_PANIC_TIMEOUT=5
-@@ -224,11 +224,11 @@ CONFIG_IOSCHED_NOOP=y
- CONFIG_IOSCHED_DEADLINE=y
- CONFIG_IOSCHED_ROW=y
- CONFIG_IOSCHED_CFQ=y
--# CONFIG_DEFAULT_DEADLINE is not set
--CONFIG_DEFAULT_ROW=y
-+CONFIG_DEFAULT_DEADLINE=y
-+# CONFIG_DEFAULT_ROW is not set
- # CONFIG_DEFAULT_CFQ is not set
- # CONFIG_DEFAULT_NOOP is not set
--CONFIG_DEFAULT_IOSCHED="row"
-+CONFIG_DEFAULT_IOSCHED="deadline"
- # CONFIG_INLINE_SPIN_TRYLOCK is not set
- # CONFIG_INLINE_SPIN_TRYLOCK_BH is not set
- # CONFIG_INLINE_SPIN_LOCK is not set
-@@ -3453,3 +3453,17 @@ CONFIG_DQL=y
- CONFIG_NLATTR=y
- # CONFIG_AVERAGE is not set
- # CONFIG_CORDIC is not set
-+
-+#
-+# EX Config
-+#
-+CONFIG_KERNEL_MODE_NEON=y
-+CONFIG_CPU_VOLTAGE_TABLE=y
-+CONFIG_S2W=y
-+CONFIG_MSM_KGSL_SIMPLE_GOV=y
-+CONFIG_GPU_VOLTAGE_TABLE=y
-+CONFIG_MSM_SLEEPER=y
-+# CONFIG_SOUND_CONTROL_HAX_GPL is not set
-+CONFIG_SOUND_CONTROL_HAX_3_GPL=y
-+CONFIG_CPU_FREQ_GOV_INTELLIACTIVE=y
-+# CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE is not set
 diff --git a/arch/arm/include/asm/xor.h b/arch/arm/include/asm/xor.h
 index 7604673..4ffb26d 100644
 --- a/arch/arm/include/asm/xor.h
