@@ -1,7 +1,7 @@
  Makefile                                           |   4 +-
  arch/arm/Kconfig                                   |   6 +
  arch/arm/Makefile                                  |   2 +-
- arch/arm/configs/cyanogen_aries_defconfig          |  24 +-
+ arch/arm/configs/cyanogen_ex_aries_defconfig       |  24 +-
  arch/arm/include/asm/xor.h                         |  73 +++
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
@@ -85,10 +85,10 @@ index 6bebe17..a81e9e4 100644
  
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
-diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
+diff --git a/arch/arm/configs/cyanogen_ex_aries_defconfig b/arch/arm/configs/cyanogen_ex_aries_defconfig
 index d06fccc..dd15282 100644
---- a/arch/arm/configs/cyanogen_aries_defconfig
-+++ b/arch/arm/configs/cyanogen_aries_defconfig
+--- a/arch/arm/configs/cyanogen_ex_aries_defconfig
++++ b/arch/arm/configs/cyanogen_ex_aries_defconfig
 @@ -44,7 +44,7 @@ CONFIG_IRQ_WORK=y
  CONFIG_EXPERIMENTAL=y
  CONFIG_INIT_ENV_ARG_LIMIT=32
