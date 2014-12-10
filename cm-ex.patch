@@ -12,7 +12,7 @@
  arch/arm/mach-msm/clock-pll.c                      |  37 ++
  arch/arm/mach-msm/cpufreq.c                        |  79 +++
  arch/arm/mach-msm/include/mach/kgsl.h              |   2 +
- arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c   |  28 +-
+ arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c   |  32 +-
  .../mach-msm/xiaomi/aries/board-aries-regulator.c  |  10 +-
  arch/arm/vfp/Makefile                              |   2 +-
  arch/arm/vfp/vfphw.S                               |   5 +
@@ -35,7 +35,7 @@
  sound/soc/codecs/Kconfig                           |  13 +
  sound/soc/codecs/Makefile                          |   5 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 37 files changed, 1620 insertions(+), 210 deletions(-)
+ 37 files changed, 1622 insertions(+), 212 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -1032,7 +1032,7 @@ index 2d7e8df..fc9ab5e 100644
  	KGSL_IOMMU_CONTEXT_USER = 0,
  	KGSL_IOMMU_CONTEXT_PRIV = 1,
 diff --git a/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c b/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
-index 23a00d2..024bf31 100644
+index 23a00d2..5118ede 100644
 --- a/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
 +++ b/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
 @@ -22,6 +22,8 @@
@@ -1063,6 +1063,22 @@ index 23a00d2..024bf31 100644
  		.ab = 0,
 -		.ib = KGSL_CONVERT_TO_MBPS(1000),
 +		.ib = KGSL_CONVERT_TO_MBPS(1200),
+ 	},
+ };
+ 
+@@ -138,13 +141,13 @@ static struct msm_bus_vectors grp3d_max_vectors[] = {
+ 		.src = MSM_BUS_MASTER_GRAPHICS_3D,
+ 		.dst = MSM_BUS_SLAVE_EBI_CH0,
+ 		.ab = 0,
+-		.ib = KGSL_CONVERT_TO_MBPS(4264),
++		.ib = KGSL_CONVERT_TO_MBPS(4800),
+ 	},
+ 	{
+ 		.src = MSM_BUS_MASTER_GRAPHICS_3D_PORT1,
+ 		.dst = MSM_BUS_SLAVE_EBI_CH0,
+ 		.ab = 0,
+-		.ib = KGSL_CONVERT_TO_MBPS(4264),
++		.ib = KGSL_CONVERT_TO_MBPS(4800),
  	},
  };
  
