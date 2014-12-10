@@ -28,14 +28,14 @@
  drivers/gpu/msm/kgsl_pwrctrl.c                     |  69 ++-
  drivers/gpu/msm/kgsl_pwrscale_trustzone.c          |  76 +++
  drivers/input/touchscreen/Kconfig                  |   6 +
- drivers/input/touchscreen/atmel_mxt_ts.c           | 542 +++++++++++++++++++++
+ drivers/input/touchscreen/atmel_mxt_ts.c           | 544 ++++++++++++++++++++-
  drivers/mfd/wcd9xxx-core.c                         |  16 +
  include/linux/cpufreq.h                            |   3 +
  include/linux/mfd/wcd9xxx/core.h                   |   3 +
  sound/soc/codecs/Kconfig                           |  13 +
  sound/soc/codecs/Makefile                          |   5 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 37 files changed, 1619 insertions(+), 209 deletions(-)
+ 37 files changed, 1620 insertions(+), 210 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -1873,7 +1873,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index d89415a..637c948 100644
+index d89415a..e34b3da 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -1913,10 +1913,13 @@ index d89415a..637c948 100644
  /* Firmware */
  #define MXT_FW_NAME		"maxtouch.fw"
  
-@@ -317,6 +347,21 @@ enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
+@@ -315,7 +345,22 @@ enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
+ /* Touchscreen absolute values */
+ #define MXT_MAX_AREA		0xff
  
- #define MXT_MAX_FINGER		16
- 
+-#define MXT_MAX_FINGER		16
++#define MXT_MAX_FINGER		10
++
 +/* 双击/滑动唤醒 */
 +#ifdef CONFIG_S2W
 +
@@ -1931,10 +1934,9 @@ index d89415a..637c948 100644
 +#define S2W_END -1 /* 结束坐标 */
 +
 +#endif
-+
+ 
  #define T7_DATA_SIZE		3
  #define T8_DATA_SIZE		10
- #define MXT_MAX_RW_TRIES	3
 @@ -422,8 +467,340 @@ struct mxt_data {
  	bool is_crc_got;
  	bool is_key_verify;
