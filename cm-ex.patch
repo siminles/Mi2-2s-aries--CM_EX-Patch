@@ -23,7 +23,7 @@
  drivers/cpufreq/cpufreq.c                          | 110 +++++
  drivers/gpu/ion/Makefile                           |   1 +
  drivers/gpu/ion/msm/Makefile                       |   1 +
- drivers/gpu/msm/Kconfig                            |   8 +
+ drivers/gpu/msm/Kconfig                            |   7 +
  drivers/gpu/msm/Makefile                           |   2 +-
  drivers/gpu/msm/kgsl_pwrctrl.c                     |  69 ++-
  drivers/gpu/msm/kgsl_pwrscale_trustzone.c          |  76 +++
@@ -32,10 +32,10 @@
  drivers/mfd/wcd9xxx-core.c                         |  16 +
  include/linux/cpufreq.h                            |   3 +
  include/linux/mfd/wcd9xxx/core.h                   |   3 +
- sound/soc/codecs/Kconfig                           |  13 +
- sound/soc/codecs/Makefile                          |   5 +
+ sound/soc/codecs/Kconfig                           |  12 +
+ sound/soc/codecs/Makefile                          |   4 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 37 files changed, 1618 insertions(+), 208 deletions(-)
+ 37 files changed, 1615 insertions(+), 208 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -189,7 +189,7 @@ index 8ade75d..7f92e77 100644
 +  obj-$(CONFIG_XOR_BLOCKS)	+= xor-neon.o
 +endif
 diff --git a/arch/arm/mach-msm/Kconfig b/arch/arm/mach-msm/Kconfig
-index a7464c1..0a89523 100644
+index a7464c1..e48bc7c 100644
 --- a/arch/arm/mach-msm/Kconfig
 +++ b/arch/arm/mach-msm/Kconfig
 @@ -1634,6 +1634,24 @@ config MSM_CPU_FREQ_MIN
@@ -212,7 +212,7 @@ index a7464c1..0a89523 100644
 +	bool "Enable CPU Voltage Table via sysfs for adjustements"
 +	default n
 +	help
-+	  Krait User Votlage Control 
++	  Krait User Votlage Control
 +
  config MSM_AVS_HW
  	bool "Enable Adaptive Voltage Scaling (AVS)"
@@ -228,7 +228,7 @@ index debe164..7e9c125 100644
 +
 +obj-$(CONFIG_MSM_SLEEPER) += msm-sleeper.o
 diff --git a/arch/arm/mach-msm/acpuclock-8064.c b/arch/arm/mach-msm/acpuclock-8064.c
-index 8262946..bd314e7 100644
+index 8262946..20cf7ac 100644
 --- a/arch/arm/mach-msm/acpuclock-8064.c
 +++ b/arch/arm/mach-msm/acpuclock-8064.c
 @@ -98,6 +98,7 @@ static struct scalable scalable[] __initdata = {
@@ -344,8 +344,8 @@ index 8262946..bd314e7 100644
  	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1112500 },
  	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1112500 },
  	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1125000 },
-+ 	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1150000 },
-+ 	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1175000 },
++	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1150000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1175000 },
 +	{ 0, { 0 } }
 +};
 +
@@ -372,8 +372,8 @@ index 8262946..bd314e7 100644
 +	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1062500 },
 +	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1062500 },
 +	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1075000 },
-+ 	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1100000 },
-+ 	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1125000 },
++	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1100000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1125000 },
 +	{ 0, { 0 } }
 +};
 +
@@ -400,8 +400,8 @@ index 8262946..bd314e7 100644
 +	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1037500 },
 +	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1037500 },
 +	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1050000 },
-+ 	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1075000 },
-+ 	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1100000 },
++	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1075000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1100000 },
  	{ 0, { 0 } }
  };
  
@@ -646,7 +646,7 @@ index 8262946..bd314e7 100644
  	[0][PVS_SLOW]    = {tbl_slow, sizeof(tbl_slow),     0 },
  	[0][PVS_NOMINAL] = {tbl_nom,  sizeof(tbl_nom),  25000 },
 diff --git a/arch/arm/mach-msm/acpuclock-krait.c b/arch/arm/mach-msm/acpuclock-krait.c
-index e3a3f54..fe88704 100644
+index e3a3f54..0397f0d 100644
 --- a/arch/arm/mach-msm/acpuclock-krait.c
 +++ b/arch/arm/mach-msm/acpuclock-krait.c
 @@ -912,6 +912,55 @@ static void __init bus_init(const struct l2_level *l2_level)
@@ -692,7 +692,7 @@ index e3a3f54..fe88704 100644
 +		else if ( drv.acpu_freq_tbl[i].speed.khz == khz)
 +			new_vdd_uv = min(max((unsigned int)vdd_uv,
 +				(unsigned int)HFPLL_MIN_VDD), (unsigned int)HFPLL_MAX_VDD);
-+		else 
++		else
 +			continue;
 +
 +		drv.acpu_freq_tbl[i].vdd_core = new_vdd_uv;
@@ -872,7 +872,7 @@ index 7b20003..4896eb5 100644
  static void __init msm8960_clock_pre_init(void)
  {
 diff --git a/arch/arm/mach-msm/clock-pll.c b/arch/arm/mach-msm/clock-pll.c
-index aeb1c5e..ecb5826 100644
+index aeb1c5e..e6eb1f3 100644
 --- a/arch/arm/mach-msm/clock-pll.c
 +++ b/arch/arm/mach-msm/clock-pll.c
 @@ -501,6 +501,43 @@ void __init __configure_pll(struct pll_config *config,
@@ -914,13 +914,13 @@ index aeb1c5e..ecb5826 100644
 +  regval &= ~config->vco_mask;
 +  regval |= config->vco_val;
 +  writel_relaxed(regval, PLL_CONFIG_REG(regs));
-+} 
++}
 +
  void __init configure_sr_pll(struct pll_config *config,
  		struct pll_config_regs *regs, u32 ena_fsm_mode)
  {
 diff --git a/arch/arm/mach-msm/cpufreq.c b/arch/arm/mach-msm/cpufreq.c
-index 72ed4f0..fce6d0e 100644
+index 72ed4f0..cbcf6d1 100644
 --- a/arch/arm/mach-msm/cpufreq.c
 +++ b/arch/arm/mach-msm/cpufreq.c
 @@ -36,6 +36,10 @@
@@ -993,7 +993,7 @@ index 72ed4f0..fce6d0e 100644
 +		const char *buf, size_t count)
 +{
 +	if (buf[0] >= '0' && buf[0] <= '1' && buf[1] == '\n')
-+            if (maxscroff != buf[0] - '0') 
++            if (maxscroff != buf[0] - '0')
 +		        maxscroff = buf[0] - '0';
 +
 +	return count;
@@ -1032,7 +1032,7 @@ index 2d7e8df..fc9ab5e 100644
  	KGSL_IOMMU_CONTEXT_USER = 0,
  	KGSL_IOMMU_CONTEXT_PRIV = 1,
 diff --git a/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c b/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
-index 23a00d2..576e0cc5 100644
+index 23a00d2..a4810c8 100644
 --- a/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
 +++ b/arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c
 @@ -22,6 +22,8 @@
@@ -1072,7 +1072,7 @@ index 23a00d2..576e0cc5 100644
 +		max_gpu = 1;
 +	} else {
 +		max_gpu = 0;
-+	}	
++	}
 +	return 0;
 +}
 +
@@ -1561,10 +1561,10 @@ index 1893405..1ce8f16 100644
 +ccflags-y := -O2 -mcpu=cortex-a15 -mfpu=neon-vfpv4 -ftree-vectorize
  obj-y += msm_ion.o ion_cp_common.o
 diff --git a/drivers/gpu/msm/Kconfig b/drivers/gpu/msm/Kconfig
-index ba63fbc..96a935d 100644
+index ba63fbc..deeafd6 100644
 --- a/drivers/gpu/msm/Kconfig
 +++ b/drivers/gpu/msm/Kconfig
-@@ -96,3 +96,11 @@ config MSM_KGSL_DISABLE_SHADOW_WRITES
+@@ -96,3 +96,10 @@ config MSM_KGSL_DISABLE_SHADOW_WRITES
  	bool "Disable register shadow writes for context switches"
  	default n
  	depends on MSM_KGSL
@@ -1575,7 +1575,6 @@ index ba63fbc..96a935d 100644
 +	depends on MSM_KGSL
 +	---help---
 +	  A simple KGSL GPU govenor for Qualcom Adreno XXX devices
-+
 diff --git a/drivers/gpu/msm/Makefile b/drivers/gpu/msm/Makefile
 index 895235f..8f31021 100644
 --- a/drivers/gpu/msm/Makefile
@@ -1587,7 +1586,7 @@ index 895235f..8f31021 100644
  msm_kgsl_core-y = \
  	kgsl.o \
 diff --git a/drivers/gpu/msm/kgsl_pwrctrl.c b/drivers/gpu/msm/kgsl_pwrctrl.c
-index 7ee305f..7872c3a 100644
+index 7ee305f..31eeb6a 100644
 --- a/drivers/gpu/msm/kgsl_pwrctrl.c
 +++ b/drivers/gpu/msm/kgsl_pwrctrl.c
 @@ -19,6 +19,7 @@
@@ -1647,10 +1646,10 @@ index 7ee305f..7872c3a 100644
 +		else if (val == 585000000) {
 +			SetGPUpll_config(0x2B, val);
 +		}
-+	
++
 +		internal_max = val;
 +
-+	}	
++	}
 +
  	mutex_lock(&device->mutex);
  	level = _get_nearest_pwrlevel(pwr, val);
@@ -1859,7 +1858,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index d89415a..e34b3da 100644
+index d89415a..ad4cd97 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -1931,8 +1930,8 @@ index d89415a..e34b3da 100644
 +	struct mxt_wake_common wake_common;
 +	struct mxt_dt2w dt2w;
 +	struct mxt_s2w s2w;
- };
- 
++};
++
 +static ssize_t dt2w_enabled_show(struct device *dev,
 +				struct device_attribute *attr, char *buf)
 +{
@@ -2065,8 +2064,8 @@ index d89415a..e34b3da 100644
 +	&dev_attr_dt2w_delta_x.attr,
 +	&dev_attr_dt2w_delta_y.attr,
 +	NULL
-+};
-+
+ };
+ 
 +static const struct attribute_group dt2w_attr_group = {
 +	.attrs = dt2w_attrs,
 +};
@@ -2269,7 +2268,7 @@ index d89415a..e34b3da 100644
  		id = reportid - data->t9_min_reportid;
  
 +#ifdef CONFIG_S2W
- 		if (reportid >= data->t9_min_reportid &&
++		if (reportid >= data->t9_min_reportid &&
 +					reportid <= data->t9_max_reportid) {
 +			if(data->wake_common.suspended) {
 +				if (data->dt2w.enabled)
@@ -2281,7 +2280,7 @@ index d89415a..e34b3da 100644
 +				mxt_input_touchevent(data, &message, id);
 +		}
 +#else
-+ 		if (reportid >= data->t9_min_reportid &&
+ 		if (reportid >= data->t9_min_reportid &&
  					reportid <= data->t9_max_reportid)
  			mxt_input_touchevent(data, &message, id);
 +#endif
@@ -2340,7 +2339,7 @@ index d89415a..e34b3da 100644
 +
 +	if (data->s2w.enabled || data->dt2w.enabled)
 +		irq_set_irq_wake(data->irq, 1);
-+	
++
 +
 +out:
 +#endif
@@ -2560,10 +2559,10 @@ index 508bf3b..40e3a83 100644
  		u8 val);
  int wcd9xxx_interface_reg_read(struct wcd9xxx *wcd9xxx, unsigned short reg);
 diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
-index 025e863..c059a18 100644
+index 025e863..b0beb8d 100644
 --- a/sound/soc/codecs/Kconfig
 +++ b/sound/soc/codecs/Kconfig
-@@ -461,3 +461,16 @@ config SND_SOC_ES310
+@@ -461,3 +461,15 @@ config SND_SOC_ES310
  	default n
  	help
  	  earSmart eS310 Voice Processor
@@ -2579,12 +2578,11 @@ index 025e863..c059a18 100644
 +	default n
 +	help
 +	  FauxSound WCD93xx chipset sound control hacks 3.0 for deeper hax
-+
 diff --git a/sound/soc/codecs/Makefile b/sound/soc/codecs/Makefile
-index 1870927..3964863 100644
+index 1870927..96e92c7 100644
 --- a/sound/soc/codecs/Makefile
 +++ b/sound/soc/codecs/Makefile
-@@ -214,3 +214,8 @@ obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
+@@ -214,3 +214,7 @@ obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
  obj-$(CONFIG_SND_SOC_TPA6130A2)	+= snd-soc-tpa6130a2.o
  obj-$(CONFIG_SND_SOC_TPA2028D)	+= tpa2028d.o
  obj-$(CONFIG_SND_SOC_ES310) += es310.o
@@ -2592,7 +2590,6 @@ index 1870927..3964863 100644
 +# Hack
 +obj-$(CONFIG_SOUND_CONTROL_HAX_GPL) += sound_control_gpl.o
 +obj-$(CONFIG_SOUND_CONTROL_HAX_3_GPL) += sound_control_3_gpl.o
-+
 diff --git a/sound/soc/codecs/wcd9310.c b/sound/soc/codecs/wcd9310.c
 index 0a42355..a0f0bae 100644
 --- a/sound/soc/codecs/wcd9310.c
