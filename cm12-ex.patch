@@ -1,6 +1,7 @@
  Makefile                                           |   4 +-
  arch/arm/Kconfig                                   |   6 +
  arch/arm/Makefile                                  |   2 +-
+ arch/arm/configs/cyanogen_aries_defconfig          |  15 +-
  arch/arm/include/asm/xor.h                         |  73 +++
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
@@ -35,7 +36,7 @@
  sound/soc/codecs/Kconfig                           |  12 +
  sound/soc/codecs/Makefile                          |   4 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 37 files changed, 1615 insertions(+), 208 deletions(-)
+ 38 files changed, 1629 insertions(+), 209 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -55,10 +56,10 @@ index b914f2c..243bfcc 100644
  
  # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
-index 1afb325..59794fa 100644
+index c2aa5be..9ab752d 100644
 --- a/arch/arm/Kconfig
 +++ b/arch/arm/Kconfig
-@@ -2441,6 +2441,12 @@ config NEON
+@@ -2443,6 +2443,12 @@ config NEON
  	  Say Y to include support code for NEON, the ARMv7 Advanced SIMD
  	  Extension.
  
@@ -84,6 +85,36 @@ index 6bebe17..a81e9e4 100644
  
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
+diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
+index 5005151..24165e9 100644
+--- a/arch/arm/configs/cyanogen_aries_defconfig
++++ b/arch/arm/configs/cyanogen_aries_defconfig
+@@ -124,7 +124,7 @@ CONFIG_RD_GZIP=y
+ # CONFIG_RD_LZMA is not set
+ # CONFIG_RD_XZ is not set
+ # CONFIG_RD_LZO is not set
+-CONFIG_CC_OPTIMIZE_FOR_SIZE=y
++# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
+ CONFIG_SYSCTL=y
+ CONFIG_ANON_INODES=y
+ CONFIG_PANIC_TIMEOUT=5
+@@ -3456,3 +3456,16 @@ CONFIG_DQL=y
+ CONFIG_NLATTR=y
+ # CONFIG_AVERAGE is not set
+ # CONFIG_CORDIC is not set
++#
++# EX Config
++#
++CONFIG_KERNEL_MODE_NEON=y
++CONFIG_CPU_VOLTAGE_TABLE=y
++CONFIG_S2W=y
++CONFIG_MSM_KGSL_SIMPLE_GOV=y
++CONFIG_GPU_VOLTAGE_TABLE=y
++CONFIG_MSM_SLEEPER=y
++# CONFIG_SOUND_CONTROL_HAX_GPL is not set
++CONFIG_SOUND_CONTROL_HAX_3_GPL=y
++CONFIG_CPU_FREQ_GOV_INTELLIACTIVE=y
++# CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE is not set
 diff --git a/arch/arm/include/asm/xor.h b/arch/arm/include/asm/xor.h
 index 7604673..4ffb26d 100644
 --- a/arch/arm/include/asm/xor.h
@@ -920,7 +951,7 @@ index aeb1c5e..e6eb1f3 100644
  		struct pll_config_regs *regs, u32 ena_fsm_mode)
  {
 diff --git a/arch/arm/mach-msm/cpufreq.c b/arch/arm/mach-msm/cpufreq.c
-index 72ed4f0..cbcf6d1 100644
+index 72ed4f0..a7da76e 100644
 --- a/arch/arm/mach-msm/cpufreq.c
 +++ b/arch/arm/mach-msm/cpufreq.c
 @@ -36,6 +36,10 @@
@@ -929,7 +960,7 @@ index 72ed4f0..cbcf6d1 100644
  
 +/* maxscroff */
 +uint32_t maxscroff_freq = 702000;
-+uint32_t maxscroff = 0;
++uint32_t maxscroff = 1;
 +
  static DEFINE_MUTEX(l2bw_lock);
  
@@ -1576,7 +1607,7 @@ index ba63fbc..deeafd6 100644
 +	---help---
 +	  A simple KGSL GPU govenor for Qualcom Adreno XXX devices
 diff --git a/drivers/gpu/msm/Makefile b/drivers/gpu/msm/Makefile
-index 895235f..8f31021 100644
+index 53b7b94..5aefe19 100644
 --- a/drivers/gpu/msm/Makefile
 +++ b/drivers/gpu/msm/Makefile
 @@ -1,4 +1,4 @@
@@ -1586,7 +1617,7 @@ index 895235f..8f31021 100644
  msm_kgsl_core-y = \
  	kgsl.o \
 diff --git a/drivers/gpu/msm/kgsl_pwrctrl.c b/drivers/gpu/msm/kgsl_pwrctrl.c
-index 7ee305f..31eeb6a 100644
+index e7eaa93..31f2428 100644
 --- a/drivers/gpu/msm/kgsl_pwrctrl.c
 +++ b/drivers/gpu/msm/kgsl_pwrctrl.c
 @@ -19,6 +19,7 @@
@@ -1716,12 +1747,12 @@ index 7ee305f..31eeb6a 100644
  	return num_chars;
  }
 diff --git a/drivers/gpu/msm/kgsl_pwrscale_trustzone.c b/drivers/gpu/msm/kgsl_pwrscale_trustzone.c
-index 40649d2..123053e 100644
+index 1119dfa..62b673d 100644
 --- a/drivers/gpu/msm/kgsl_pwrscale_trustzone.c
 +++ b/drivers/gpu/msm/kgsl_pwrscale_trustzone.c
-@@ -23,8 +23,15 @@
- #include "kgsl_pwrscale.h"
+@@ -24,8 +24,15 @@
  #include "kgsl_device.h"
+ #include "kgsl_trace.h"
  
 +#ifdef CONFIG_MSM_KGSL_SIMPLE_GOV
 +#include <linux/module.h>
@@ -1735,7 +1766,7 @@ index 40649d2..123053e 100644
  
  struct tz_priv {
  	int governor;
-@@ -79,6 +86,10 @@ static ssize_t tz_governor_show(struct kgsl_device *device,
+@@ -80,6 +87,10 @@ static ssize_t tz_governor_show(struct kgsl_device *device,
  
  	if (priv->governor == TZ_GOVERNOR_ONDEMAND)
  		ret = snprintf(buf, 10, "ondemand\n");
@@ -1746,7 +1777,7 @@ index 40649d2..123053e 100644
  	else
  		ret = snprintf(buf, 13, "performance\n");
  
-@@ -102,6 +113,10 @@ static ssize_t tz_governor_store(struct kgsl_device *device,
+@@ -103,6 +114,10 @@ static ssize_t tz_governor_store(struct kgsl_device *device,
  
  	if (!strncmp(str, "ondemand", 8))
  		priv->governor = TZ_GOVERNOR_ONDEMAND;
@@ -1757,7 +1788,7 @@ index 40649d2..123053e 100644
  	else if (!strncmp(str, "performance", 11))
  		priv->governor = TZ_GOVERNOR_PERFORMANCE;
  
-@@ -131,11 +146,59 @@ static void tz_wake(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
+@@ -132,12 +147,60 @@ static void tz_wake(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
  {
  	struct tz_priv *priv = pwrscale->priv;
  	if (device->state != KGSL_STATE_NAP &&
@@ -1767,7 +1798,8 @@ index 40649d2..123053e 100644
 +#else
  		priv->governor == TZ_GOVERNOR_ONDEMAND)
 +#endif
- 		kgsl_pwrctrl_pwrlevel_change(device,
+ 		if (device->pwrctrl.constraint.type == KGSL_CONSTRAINT_NONE)
+ 			kgsl_pwrctrl_pwrlevel_change(device,
  					device->pwrctrl.default_pwrlevel);
  }
  
@@ -1817,7 +1849,7 @@ index 40649d2..123053e 100644
  static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
  {
  	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
-@@ -174,9 +237,22 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
+@@ -178,9 +241,22 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
  				(pwr->active_pwrlevel + 1)/2,
  				priv->bin.total_time, priv->bin.busy_time);
  		else
@@ -1858,7 +1890,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index d89415a..ad4cd97 100644
+index 75f5eb1..ad4cd97 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -1902,7 +1934,7 @@ index d89415a..ad4cd97 100644
  /* Touchscreen absolute values */
  #define MXT_MAX_AREA		0xff
  
--#define MXT_MAX_FINGER		16
+-#define MXT_MAX_FINGER		4
 +#define MXT_MAX_FINGER		10
 +
 +/* 双击/滑动唤醒 */
