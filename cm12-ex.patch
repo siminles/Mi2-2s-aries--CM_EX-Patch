@@ -86,7 +86,7 @@ index 6bebe17..a81e9e4 100644
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
-index 5005151..24165e9 100644
+index 5005151..a40188f 100644
 --- a/arch/arm/configs/cyanogen_aries_defconfig
 +++ b/arch/arm/configs/cyanogen_aries_defconfig
 @@ -124,7 +124,7 @@ CONFIG_RD_GZIP=y
@@ -112,7 +112,7 @@ index 5005151..24165e9 100644
 +CONFIG_GPU_VOLTAGE_TABLE=y
 +CONFIG_MSM_SLEEPER=y
 +# CONFIG_SOUND_CONTROL_HAX_GPL is not set
-+CONFIG_SOUND_CONTROL_HAX_3_GPL=y
++# CONFIG_SOUND_CONTROL_HAX_3_GPL is nor set
 +CONFIG_CPU_FREQ_GOV_INTELLIACTIVE=y
 +# CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE is not set
 diff --git a/arch/arm/include/asm/xor.h b/arch/arm/include/asm/xor.h
