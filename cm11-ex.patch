@@ -920,7 +920,7 @@ index aeb1c5e..e6eb1f3 100644
  		struct pll_config_regs *regs, u32 ena_fsm_mode)
  {
 diff --git a/arch/arm/mach-msm/cpufreq.c b/arch/arm/mach-msm/cpufreq.c
-index 72ed4f0..cbcf6d1 100644
+index 72ed4f0..a7da76e 100644
 --- a/arch/arm/mach-msm/cpufreq.c
 +++ b/arch/arm/mach-msm/cpufreq.c
 @@ -36,6 +36,10 @@
@@ -1858,7 +1858,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index d89415a..ad4cd97 100644
+index d89415a..81125c0 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -1909,10 +1909,10 @@ index d89415a..ad4cd97 100644
 +#ifdef CONFIG_S2W
 +
 +#define DT2W_ENABLED 1 /* 默认是否启用 */
-+#define DT2W_TIMEOUT_MAX 400 /* 两次点击的最大时间间隔 */
++#define DT2W_TIMEOUT_MAX 350 /* 两次点击的最大时间间隔 */
 +#define DT2W_TIMEOUT_MIN 100 /* 两次点击的最小时间间隔 */
-+#define DT2W_DELTA_X 60 /* 点击的横向分辨率大小 */
-+#define DT2W_DELTA_Y 60 /* 点击的纵向分辨率大小 */
++#define DT2W_DELTA_X 50 /* 点击的横向分辨率大小 */
++#define DT2W_DELTA_Y 50 /* 点击的纵向分辨率大小 */
 +
 +#define S2W_ENABLED 1 /* 默认是否启用 */
 +#define S2W_START -1 /* 滑动唤醒起始坐标 */
