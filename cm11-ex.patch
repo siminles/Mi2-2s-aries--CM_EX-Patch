@@ -20,7 +20,7 @@
  crypto/Kconfig                                     |  33 ++
  drivers/cpufreq/Kconfig                            |  26 +
  drivers/cpufreq/Makefile                           |   1 +
- drivers/cpufreq/cpufreq.c                          | 110 ++++
+ drivers/cpufreq/cpufreq.c                          | 110 +++++
  drivers/gpu/ion/Makefile                           |   1 +
  drivers/gpu/ion/msm/Makefile                       |   1 +
  drivers/gpu/msm/Kconfig                            |   7 +
@@ -28,14 +28,14 @@
  drivers/gpu/msm/kgsl_pwrctrl.c                     |  69 ++-
  drivers/gpu/msm/kgsl_pwrscale_trustzone.c          |  76 +++
  drivers/input/touchscreen/Kconfig                  |   6 +
- drivers/input/touchscreen/atmel_mxt_ts.c           | 551 ++++++++++++++++++++-
+ drivers/input/touchscreen/atmel_mxt_ts.c           | 544 ++++++++++++++++++++-
  drivers/mfd/wcd9xxx-core.c                         |  16 +
  include/linux/cpufreq.h                            |   3 +
  include/linux/mfd/wcd9xxx/core.h                   |   3 +
  sound/soc/codecs/Kconfig                           |  12 +
  sound/soc/codecs/Makefile                          |   4 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 37 files changed, 1622 insertions(+), 208 deletions(-)
+ 37 files changed, 1615 insertions(+), 208 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -1858,7 +1858,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index d89415a..2e7028b 100644
+index d89415a..81125c0 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -2064,16 +2064,16 @@ index d89415a..2e7028b 100644
 +	&dev_attr_dt2w_delta_x.attr,
 +	&dev_attr_dt2w_delta_y.attr,
 +	NULL
-+};
-+
+ };
+ 
 +static const struct attribute_group dt2w_attr_group = {
 +	.attrs = dt2w_attrs,
 +};
 +
 +static const struct attribute_group s2w_attr_group = {
 +	.attrs = s2w_attrs,
- };
- 
++};
++
 +static void dt2w_presspwr_work(struct work_struct *work)
 +{
 +	struct mxt_dt2w *dt2w = container_of(work, struct mxt_dt2w, work);
@@ -2311,7 +2311,7 @@ index d89415a..2e7028b 100644
  	}
  
  	error = __mxt_read_reg(client, data->t7_start_addr,
-@@ -1890,11 +2289,46 @@ static int mxt_initialize(struct mxt_data *data)
+@@ -1890,6 +2289,34 @@ static int mxt_initialize(struct mxt_data *data)
  			"Matrix X Size: %d Matrix Y Size: %d\n",
  			info->matrix_xsize, info->matrix_ysize);
  
@@ -2341,24 +2341,12 @@ index d89415a..2e7028b 100644
 +		irq_set_irq_wake(data->irq, 1);
 +
 +
-+
++out:
 +#endif
  	return 0;
-+#ifdef CONFIG_S2W
-+out:
  
  free_object_table:
- 	kfree(data->object_table);
- 	return error;
-+#else
-+free_object_table:
-+	kfree(data->object_table);
-+	return error;
-+#endif
- }
- 
- static ssize_t mxt_dbgdump_show(struct device *dev,
-@@ -2179,6 +2613,18 @@ static ssize_t mxt_update_fw_store(struct device *dev,
+@@ -2179,6 +2606,18 @@ static ssize_t mxt_update_fw_store(struct device *dev,
  	u8 bootldr_id;
  	struct input_dev *input_dev = data->input_dev;
  
@@ -2377,7 +2365,7 @@ index d89415a..2e7028b 100644
  	if (count > 0) {
  		fw_name = buf;
  		dev_info(dev, "Identify firmware name :%s \n", fw_name);
-@@ -2866,6 +3312,18 @@ static int mxt_suspend(struct device *dev)
+@@ -2866,6 +3305,18 @@ static int mxt_suspend(struct device *dev)
  	struct input_dev *input_dev = data->input_dev;
  	int error;
  
@@ -2396,7 +2384,7 @@ index d89415a..2e7028b 100644
  	disable_irq(data->irq);
  
  	mutex_lock(&input_dev->mutex);
-@@ -2907,6 +3365,20 @@ static int mxt_resume(struct device *dev)
+@@ -2907,6 +3358,20 @@ static int mxt_resume(struct device *dev)
  	struct input_dev *input_dev = data->input_dev;
  	int error;
  
@@ -2417,7 +2405,7 @@ index d89415a..2e7028b 100644
  	/* put regulators in high power mode */
  	error = mxt_regulator_lpm(data, false);
  	if (error < 0) {
-@@ -3241,6 +3713,57 @@ static int __devinit mxt_probe(struct i2c_client *client,
+@@ -3241,6 +3706,57 @@ static int __devinit mxt_probe(struct i2c_client *client,
  	if (error)
  		goto err_unregister_device;
  
@@ -2475,7 +2463,7 @@ index d89415a..2e7028b 100644
  #if defined(CONFIG_HAS_EARLYSUSPEND)
  	data->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN +
  						MXT_SUSPEND_LEVEL;
-@@ -3271,6 +3794,25 @@ static int __devinit mxt_probe(struct i2c_client *client,
+@@ -3271,6 +3787,25 @@ static int __devinit mxt_probe(struct i2c_client *client,
  	mxt_handle_extra_touchdata(data, MXT_REFERENCE_DATA);
  	return 0;
  
@@ -2501,7 +2489,7 @@ index d89415a..2e7028b 100644
  err_remove_sysfs_group:
  	sysfs_remove_group(&client->dev.kobj, &mxt_attr_group);
  err_unregister_device:
-@@ -3311,6 +3853,13 @@ static int __devexit mxt_remove(struct i2c_client *client)
+@@ -3311,6 +3846,13 @@ static int __devexit mxt_remove(struct i2c_client *client)
  	cancel_delayed_work_sync(&data->force_calibrate_delayed_work);
  	cancel_delayed_work_sync(&data->disable_antipalm_delayed_work);
  	free_irq(data->irq, data);
