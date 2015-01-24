@@ -929,7 +929,7 @@ index 72ed4f0..a7da76e 100644
  
 +/* maxscroff */
 +uint32_t maxscroff_freq = 702000;
-+uint32_t maxscroff = 1;
++uint32_t maxscroff = 0;
 +
  static DEFINE_MUTEX(l2bw_lock);
  
