@@ -31,12 +31,15 @@
  drivers/input/touchscreen/Kconfig                  |   6 +
  drivers/input/touchscreen/atmel_mxt_ts.c           | 551 ++++++++++++++++++++-
  drivers/mfd/wcd9xxx-core.c                         |  16 +
+ drivers/staging/android/Kconfig                    |   8 +
+ drivers/staging/android/lowmemorykiller.c          |  99 ++++
  include/linux/cpufreq.h                            |   3 +
  include/linux/mfd/wcd9xxx/core.h                   |   3 +
+ include/linux/sched.h                              |  11 +
  sound/soc/codecs/Kconfig                           |  12 +
  sound/soc/codecs/Makefile                          |   4 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 38 files changed, 1637 insertions(+), 208 deletions(-)
+ 41 files changed, 1755 insertions(+), 208 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -86,7 +89,7 @@ index 6bebe17..a81e9e4 100644
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
-index 5005151..445a1a5 100644
+index 2585a14..b088ad6 100644
 --- a/arch/arm/configs/cyanogen_aries_defconfig
 +++ b/arch/arm/configs/cyanogen_aries_defconfig
 @@ -124,7 +124,7 @@ CONFIG_RD_GZIP=y
@@ -98,7 +101,7 @@ index 5005151..445a1a5 100644
  CONFIG_SYSCTL=y
  CONFIG_ANON_INODES=y
  CONFIG_PANIC_TIMEOUT=5
-@@ -3372,6 +3372,7 @@ CONFIG_CRYPTO_MD5=y
+@@ -3379,6 +3379,7 @@ CONFIG_CRYPTO_MD5=y
  # CONFIG_CRYPTO_RMD256 is not set
  # CONFIG_CRYPTO_RMD320 is not set
  CONFIG_CRYPTO_SHA1=y
@@ -106,7 +109,7 @@ index 5005151..445a1a5 100644
  CONFIG_CRYPTO_SHA256=y
  # CONFIG_CRYPTO_SHA512 is not set
  # CONFIG_CRYPTO_TGR192 is not set
-@@ -3381,6 +3382,7 @@ CONFIG_CRYPTO_SHA256=y
+@@ -3388,6 +3389,7 @@ CONFIG_CRYPTO_SHA256=y
  # Ciphers
  #
  CONFIG_CRYPTO_AES=y
@@ -114,7 +117,7 @@ index 5005151..445a1a5 100644
  # CONFIG_CRYPTO_ANUBIS is not set
  CONFIG_CRYPTO_ARC4=y
  # CONFIG_CRYPTO_BLOWFISH is not set
-@@ -3456,3 +3458,16 @@ CONFIG_DQL=y
+@@ -3463,3 +3465,16 @@ CONFIG_DQL=y
  CONFIG_NLATTR=y
  # CONFIG_AVERAGE is not set
  # CONFIG_CORDIC is not set
@@ -966,7 +969,7 @@ index aeb1c5e..e6eb1f3 100644
  		struct pll_config_regs *regs, u32 ena_fsm_mode)
  {
 diff --git a/arch/arm/mach-msm/cpufreq.c b/arch/arm/mach-msm/cpufreq.c
-index 72ed4f0..a7da76e 100644
+index 72ed4f0..cbcf6d1 100644
 --- a/arch/arm/mach-msm/cpufreq.c
 +++ b/arch/arm/mach-msm/cpufreq.c
 @@ -36,6 +36,10 @@
@@ -1905,7 +1908,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index 75f5eb1..26bb198 100644
+index d89415a..26bb198 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -1949,7 +1952,7 @@ index 75f5eb1..26bb198 100644
  /* Touchscreen absolute values */
  #define MXT_MAX_AREA		0xff
  
--#define MXT_MAX_FINGER		4
+-#define MXT_MAX_FINGER		16
 +#define MXT_MAX_FINGER		10
 +
 +/* 双击/滑动唤醒 */
@@ -2589,6 +2592,166 @@ index 6152bc2..f2c24ba 100644
  static int wcd9xxx_write(struct wcd9xxx *wcd9xxx, unsigned short reg,
  			int bytes, void *src, bool interface_reg)
  {
+diff --git a/drivers/staging/android/Kconfig b/drivers/staging/android/Kconfig
+index 43d17c2..5d3c237 100644
+--- a/drivers/staging/android/Kconfig
++++ b/drivers/staging/android/Kconfig
+@@ -76,6 +76,14 @@ config ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
+ 	  /sys/module/lowmemorykiller/parameters/adj and convert them
+ 	  to oom_score_adj values.
+ 
++config ANDROID_LMK_ADJ_RBTREE
++	bool "Android Low Memory Killer: Red-Black Tree search"
++	depends on ANDROID_LOW_MEMORY_KILLER
++	default y
++	---help---
++	  Utilize RB Tree for walking the tasklist.. O(log n) vs O(n)
++	  much speedier for long task list!
++
+ source "drivers/staging/android/switch/Kconfig"
+ 
+ config ANDROID_INTF_ALARM_DEV
+diff --git a/drivers/staging/android/lowmemorykiller.c b/drivers/staging/android/lowmemorykiller.c
+index b8dbbd3..f2da275 100644
+--- a/drivers/staging/android/lowmemorykiller.c
++++ b/drivers/staging/android/lowmemorykiller.c
+@@ -90,6 +90,12 @@ static int test_task_flag(struct task_struct *p, int flag)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_ANDROID_LMK_ADJ_RBTREE
++static struct task_struct *pick_next_from_adj_tree(struct task_struct *task);
++static struct task_struct *pick_first_task(void);
++static struct task_struct *pick_last_task(void);
++#endif
++
+ static DEFINE_MUTEX(scan_mutex);
+ 
+ int can_use_cma_pages(gfp_t gfp_mask)
+@@ -322,7 +328,13 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
+ 	selected_oom_score_adj = min_score_adj;
+ 
+ 	rcu_read_lock();
++#ifdef CONFIG_ANDROID_LMK_ADJ_RBTREE
++	for (tsk = pick_first_task();
++		tsk != pick_last_task();
++		tsk = pick_next_from_adj_tree(tsk)) {
++#else
+ 	for_each_process(tsk) {
++#endif
+ 		struct task_struct *p;
+ 		int oom_score_adj;
+ 
+@@ -350,7 +362,11 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
+ 		oom_score_adj = p->signal->oom_score_adj;
+ 		if (oom_score_adj < min_score_adj) {
+ 			task_unlock(p);
++#ifdef CONFIG_ANDROID_LMK_ADJ_RBTREE
++			break;
++#else
+ 			continue;
++#endif
+ 		}
+ 		tasksize = get_mm_rss(p->mm);
+ 		task_unlock(p);
+@@ -358,7 +374,11 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
+ 			continue;
+ 		if (selected) {
+ 			if (oom_score_adj < selected_oom_score_adj)
++#ifdef CONFIG_ANDROID_LMK_ADJ_RBTREE
++				break;
++#else
+ 				continue;
++#endif
+ 			if (oom_score_adj == selected_oom_score_adj &&
+ 			    tasksize <= selected_tasksize)
+ 				continue;
+@@ -510,6 +530,85 @@ static const struct kparam_array __param_arr_adj = {
+ };
+ #endif
+ 
++#ifdef CONFIG_ANDROID_LMK_ADJ_RBTREE
++DEFINE_SPINLOCK(lmk_lock);
++struct rb_root tasks_scoreadj = RB_ROOT;
++void add_2_adj_tree(struct task_struct *task)
++{
++	struct rb_node **link = &tasks_scoreadj.rb_node;
++	struct rb_node *parent = NULL;
++	struct task_struct *task_entry;
++	s64 key = task->signal->oom_score_adj;
++	/*
++ * 	 * Find the right place in the rbtree:
++ * 	 	 */
++	spin_lock(&lmk_lock);
++	while (*link) {
++		parent = *link;
++		task_entry = rb_entry(parent, struct task_struct, adj_node);
++
++		if (key < task_entry->signal->oom_score_adj)
++			link = &parent->rb_right;
++		else
++			link = &parent->rb_left;
++	}
++
++	rb_link_node(&task->adj_node, parent, link);
++	rb_insert_color(&task->adj_node, &tasks_scoreadj);
++	spin_unlock(&lmk_lock);
++}
++
++void delete_from_adj_tree(struct task_struct *task)
++{
++	spin_lock(&lmk_lock);
++	rb_erase(&task->adj_node, &tasks_scoreadj);
++	spin_unlock(&lmk_lock);
++}
++
++
++static struct task_struct *pick_next_from_adj_tree(struct task_struct *task)
++{
++	struct rb_node *next;
++
++	spin_lock(&lmk_lock);
++	next = rb_next(&task->adj_node);
++	spin_unlock(&lmk_lock);
++
++	if (!next)
++		return NULL;
++
++	 return rb_entry(next, struct task_struct, adj_node);
++}
++
++static struct task_struct *pick_first_task(void)
++{
++	struct rb_node *left;
++
++	spin_lock(&lmk_lock);
++	left = rb_first(&tasks_scoreadj);
++	spin_unlock(&lmk_lock);
++
++	if (!left)
++		return NULL;
++
++	return rb_entry(left, struct task_struct, adj_node);
++}
++
++static struct task_struct *pick_last_task(void)
++{
++	struct rb_node *right;
++
++	spin_lock(&lmk_lock);
++	right = rb_last(&tasks_scoreadj);
++	spin_unlock(&lmk_lock);
++
++	if (!right)
++		return NULL;
++
++	return rb_entry(right, struct task_struct, adj_node);
++}
++#endif
++
+ module_param_named(cost, lowmem_shrinker.seeks, int, S_IRUGO | S_IWUSR);
+ #ifdef CONFIG_ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
+ __module_param_call(MODULE_PARAM_PREFIX, adj,
 diff --git a/include/linux/cpufreq.h b/include/linux/cpufreq.h
 index 34edac8..0f52400 100644
 --- a/include/linux/cpufreq.h
@@ -2617,6 +2780,35 @@ index 508bf3b..40e3a83 100644
  int wcd9xxx_reg_write(struct wcd9xxx *wcd9xxx, unsigned short reg,
  		u8 val);
  int wcd9xxx_interface_reg_read(struct wcd9xxx *wcd9xxx, unsigned short reg);
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 81fe6b9..311cbe8 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1329,6 +1329,9 @@ struct task_struct {
+ #endif
+ 
+ 	struct list_head tasks;
++#ifdef CONFIG_ANDROID_LMK_ADJ_RBTREE
++	struct rb_node adj_node;
++#endif
+ #ifdef CONFIG_SMP
+ 	struct plist_node pushable_tasks;
+ #endif
+@@ -1676,6 +1679,14 @@ static inline struct pid *task_tgid(struct task_struct *task)
+ 	return task->group_leader->pids[PIDTYPE_PID].pid;
+ }
+ 
++#ifdef CONFIG_ANDROID_LMK_ADJ_RBTREE
++extern void add_2_adj_tree(struct task_struct *task);
++extern void delete_from_adj_tree(struct task_struct *task);
++#else
++static inline void add_2_adj_tree(struct task_struct *task) { }
++static inline void delete_from_adj_tree(struct task_struct *task) { }
++#endif
++
+ /*
+  * Without tasklist or rcu lock it is not safe to dereference
+  * the result of task_pgrp/task_session even if task == current,
 diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
 index 025e863..b0beb8d 100644
 --- a/sound/soc/codecs/Kconfig
