@@ -1,7 +1,7 @@
  Makefile                                           |   4 +-
  arch/arm/Kconfig                                   |   6 +
  arch/arm/Makefile                                  |   2 +-
- arch/arm/configs/cyanogen_aries_defconfig          |  25 +-
+ arch/arm/configs/cyanogen_aries_defconfig          |  26 +-
  arch/arm/include/asm/xor.h                         |  73 +++
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
@@ -39,7 +39,7 @@
  sound/soc/codecs/Kconfig                           |  12 +
  sound/soc/codecs/Makefile                          |   4 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 41 files changed, 1759 insertions(+), 212 deletions(-)
+ 41 files changed, 1760 insertions(+), 212 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index b914f2c..243bfcc 100644
@@ -89,7 +89,7 @@ index 6bebe17..a81e9e4 100644
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
-index 2585a14..cccb964 100644
+index 2585a14..1a5b13a4 100644
 --- a/arch/arm/configs/cyanogen_aries_defconfig
 +++ b/arch/arm/configs/cyanogen_aries_defconfig
 @@ -44,7 +44,7 @@ CONFIG_IRQ_WORK=y
@@ -141,7 +141,7 @@ index 2585a14..cccb964 100644
  # CONFIG_CRYPTO_ANUBIS is not set
  CONFIG_CRYPTO_ARC4=y
  # CONFIG_CRYPTO_BLOWFISH is not set
-@@ -3463,3 +3465,16 @@ CONFIG_DQL=y
+@@ -3463,3 +3465,17 @@ CONFIG_DQL=y
  CONFIG_NLATTR=y
  # CONFIG_AVERAGE is not set
  # CONFIG_CORDIC is not set
@@ -158,6 +158,7 @@ index 2585a14..cccb964 100644
 +# CONFIG_SOUND_CONTROL_HAX_3_GPL is nor set
 +CONFIG_CPU_FREQ_GOV_INTELLIACTIVE=y
 +# CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE is not set
++CONFIG_ANDROID_LMK_ADJ_RBTREE=y
 diff --git a/arch/arm/include/asm/xor.h b/arch/arm/include/asm/xor.h
 index 7604673..4ffb26d 100644
 --- a/arch/arm/include/asm/xor.h
@@ -1932,7 +1933,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index d89415a..26bb198 100644
+index d89415a..0928534 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -1982,7 +1983,7 @@ index d89415a..26bb198 100644
 +/* 双击/滑动唤醒 */
 +#ifdef CONFIG_S2W
 +
-+#define DT2W_ENABLED 1 /* 默认是否启用 */
++#define DT2W_ENABLED 0 /* 默认是否启用 */
 +#define DT2W_TIMEOUT_MAX 350 /* 两次点击的最大时间间隔 */
 +#define DT2W_TIMEOUT_MIN 100 /* 两次点击的最小时间间隔 */
 +#define DT2W_DELTA_X 50 /* 点击的横向分辨率大小 */
@@ -2617,7 +2618,7 @@ index 6152bc2..f2c24ba 100644
  			int bytes, void *src, bool interface_reg)
  {
 diff --git a/drivers/staging/android/Kconfig b/drivers/staging/android/Kconfig
-index 43d17c2..5d3c237 100644
+index 43d17c2..f94835a 100644
 --- a/drivers/staging/android/Kconfig
 +++ b/drivers/staging/android/Kconfig
 @@ -76,6 +76,14 @@ config ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
@@ -2627,7 +2628,7 @@ index 43d17c2..5d3c237 100644
 +config ANDROID_LMK_ADJ_RBTREE
 +	bool "Android Low Memory Killer: Red-Black Tree search"
 +	depends on ANDROID_LOW_MEMORY_KILLER
-+	default y
++	default n
 +	---help---
 +	  Utilize RB Tree for walking the tasklist.. O(log n) vs O(n)
 +	  much speedier for long task list!
