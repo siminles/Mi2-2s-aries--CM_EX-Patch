@@ -1,7 +1,7 @@
  Makefile                                           |   4 +-
  arch/arm/Kconfig                                   |   6 +
  arch/arm/Makefile                                  |   2 +-
- arch/arm/configs/cyanogen_aries_defconfig          |  26 +-
+ arch/arm/configs/cyanogen_aries_defconfig          |  25 +-
  arch/arm/include/asm/xor.h                         |  73 +++
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
@@ -31,18 +31,17 @@
  drivers/input/touchscreen/Kconfig                  |   6 +
  drivers/input/touchscreen/atmel_mxt_ts.c           | 551 ++++++++++++++++++++-
  drivers/mfd/wcd9xxx-core.c                         |  16 +
- drivers/staging/android/Kconfig                    |   8 +
- drivers/staging/android/lowmemorykiller.c          |  99 ++++
+ drivers/power/pm8921-charger.c                     |   2 +-
+ fs/namespace.c                                     |   4 +-
  include/linux/cpufreq.h                            |   3 +
  include/linux/mfd/wcd9xxx/core.h                   |   3 +
- include/linux/sched.h                              |  11 +
  sound/soc/codecs/Kconfig                           |  12 +
  sound/soc/codecs/Makefile                          |   4 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 41 files changed, 1760 insertions(+), 212 deletions(-)
+ 40 files changed, 1644 insertions(+), 215 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index b914f2c..243bfcc 100644
+index b914f2c..32aae61 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -374,10 +374,10 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
@@ -50,11 +49,11 @@ index b914f2c..243bfcc 100644
  		   -fno-delete-null-pointer-checks
  KBUILD_AFLAGS_KERNEL :=
 -KBUILD_CFLAGS_KERNEL :=
-+KBUILD_CFLAGS_KERNEL := -O2 -mcpu=cortex-a15 -mfpu=neon-vfpv4 -ftree-vectorize
++KBUILD_CFLAGS_KERNEL := -mcpu=cortex-a15 -mfpu=neon-vfpv4
  KBUILD_AFLAGS   := -D__ASSEMBLY__
  KBUILD_AFLAGS_MODULE  := -DMODULE
 -KBUILD_CFLAGS_MODULE  := -DMODULE
-+KBUILD_CFLAGS_MODULE  := -DMODULE -O2 -mcpu=cortex-a15 -mfpu=neon-vfpv4 -ftree-vectorize
++KBUILD_CFLAGS_MODULE  := -DMODULE -mcpu=cortex-a15 -mfpu=neon-vfpv4
  KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
  
  # Read KERNELRELEASE from include/config/kernel.release (if it exists)
@@ -76,7 +75,7 @@ index c2aa5be..9ab752d 100644
  
  menu "Userspace binary formats"
 diff --git a/arch/arm/Makefile b/arch/arm/Makefile
-index 6bebe17..a81e9e4 100644
+index 6bebe17..eec789f 100644
 --- a/arch/arm/Makefile
 +++ b/arch/arm/Makefile
 @@ -79,7 +79,7 @@ arch-$(CONFIG_CPU_32v3)		:=-D__LINUX_ARM_ARCH__=3 -march=armv3
@@ -84,12 +83,12 @@ index 6bebe17..a81e9e4 100644
  # doesn't even support -march=armv7-a, since in that situation we would have
  # bigger problems.
 -arch-$(CONFIG_ARCH_MSM_KRAIT)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a15,-march=armv7-a)
-+arch-$(CONFIG_ARCH_MSM_KRAIT)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a15,-march=armv7-a,-mfpu=neon-vfpv4,-ftree-vectorize)
++arch-$(CONFIG_ARCH_MSM_KRAIT)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a15,-march=armv7-a,-mfpu=neon-vfpv4)
  
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
-index 2585a14..1a5b13a4 100644
+index ceec491..7e16986 100644
 --- a/arch/arm/configs/cyanogen_aries_defconfig
 +++ b/arch/arm/configs/cyanogen_aries_defconfig
 @@ -44,7 +44,7 @@ CONFIG_IRQ_WORK=y
@@ -141,7 +140,7 @@ index 2585a14..1a5b13a4 100644
  # CONFIG_CRYPTO_ANUBIS is not set
  CONFIG_CRYPTO_ARC4=y
  # CONFIG_CRYPTO_BLOWFISH is not set
-@@ -3463,3 +3465,17 @@ CONFIG_DQL=y
+@@ -3463,3 +3465,16 @@ CONFIG_DQL=y
  CONFIG_NLATTR=y
  # CONFIG_AVERAGE is not set
  # CONFIG_CORDIC is not set
@@ -154,11 +153,10 @@ index 2585a14..1a5b13a4 100644
 +CONFIG_MSM_KGSL_SIMPLE_GOV=y
 +CONFIG_GPU_VOLTAGE_TABLE=y
 +CONFIG_MSM_SLEEPER=y
-+# CONFIG_SOUND_CONTROL_HAX_GPL is not set
-+# CONFIG_SOUND_CONTROL_HAX_3_GPL is nor set
++# CONFIG_SOUND_CONTROL_HAX_GPL is not est
++CONFIG_SOUND_CONTROL_HAX_3_GPL=y
 +CONFIG_CPU_FREQ_GOV_INTELLIACTIVE=y
 +# CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE is not set
-+# CONFIG_ANDROID_LMK_ADJ_RBTREE is not set
 diff --git a/arch/arm/include/asm/xor.h b/arch/arm/include/asm/xor.h
 index 7604673..4ffb26d 100644
 --- a/arch/arm/include/asm/xor.h
@@ -250,7 +248,7 @@ index 7604673..4ffb26d 100644
 +#define NEON_TEMPLATES
 +#endif
 diff --git a/arch/arm/lib/Makefile b/arch/arm/lib/Makefile
-index 8ade75d..7f92e77 100644
+index 8ade75d..e8fc263 100644
 --- a/arch/arm/lib/Makefile
 +++ b/arch/arm/lib/Makefile
 @@ -46,3 +46,9 @@ lib-$(CONFIG_ARCH_SHARK)	+= io-shark.o
@@ -259,7 +257,7 @@ index 8ade75d..7f92e77 100644
  $(obj)/csumpartialcopyuser.o:	$(obj)/csumpartialcopygeneric.S
 +
 +ifeq ($(CONFIG_KERNEL_MODE_NEON),y)
-+  NEON_FLAGS			:= -O2 -mcpu=cortex-a15 -mfloat-abi=hard -mfpu=neon-vfpv4 -ftree-vectorize
++  NEON_FLAGS			:= -mcpu=cortex-a15 -mfpu=neon-vfpv4
 +  CFLAGS_xor-neon.o		+= $(NEON_FLAGS)
 +  obj-$(CONFIG_XOR_BLOCKS)	+= xor-neon.o
 +endif
@@ -1195,7 +1193,7 @@ index 19d7b7d..ce2b722 100644
  /* PM8921 regulator constraints */
  struct pm8xxx_regulator_platform_data
 diff --git a/arch/arm/vfp/Makefile b/arch/arm/vfp/Makefile
-index a81404c..b648c3d 100644
+index a81404c..43e4e05 100644
 --- a/arch/arm/vfp/Makefile
 +++ b/arch/arm/vfp/Makefile
 @@ -7,7 +7,7 @@
@@ -1203,7 +1201,7 @@ index a81404c..b648c3d 100644
  # asflags-y := -DDEBUG
  
 -KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=softvfp+vfp -mfloat-abi=soft)
-+KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=neon-vfpv4 -mfloat-abi=hard) -O2 -ftree-vectorize -mcpu=cortex-a15
++KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=neon-vfpv4 -mfloat-abi=hard) -mcpu=cortex-a15
  LDFLAGS		+=--no-warn-mismatch
  
  obj-y			+= vfp.o
@@ -1619,20 +1617,20 @@ index 70cfeed..c1906d1 100644
  	return 0;
  }
 diff --git a/drivers/gpu/ion/Makefile b/drivers/gpu/ion/Makefile
-index 51349f6..71e209e 100644
+index 51349f6..3406731 100644
 --- a/drivers/gpu/ion/Makefile
 +++ b/drivers/gpu/ion/Makefile
 @@ -1,3 +1,4 @@
-+ccflags-y := -O2 -mcpu=cortex-a15 -mfpu=neon-vfpv4 -ftree-vectorize
++ccflags-y := -mcpu=cortex-a15 -mfpu=neon-vfpv4
  obj-$(CONFIG_ION) +=	ion.o ion_heap.o ion_system_heap.o ion_carveout_heap.o ion_iommu_heap.o ion_cp_heap.o
  obj-$(CONFIG_CMA) += ion_cma_heap.o
  obj-$(CONFIG_ION_TEGRA) += tegra/
 diff --git a/drivers/gpu/ion/msm/Makefile b/drivers/gpu/ion/msm/Makefile
-index 1893405..1ce8f16 100644
+index 1893405..36c6a40 100644
 --- a/drivers/gpu/ion/msm/Makefile
 +++ b/drivers/gpu/ion/msm/Makefile
 @@ -1 +1,2 @@
-+ccflags-y := -O2 -mcpu=cortex-a15 -mfpu=neon-vfpv4 -ftree-vectorize
++ccflags-y := -mcpu=cortex-a15 -mfpu=neon-vfpv4
  obj-y += msm_ion.o ion_cp_common.o
 diff --git a/drivers/gpu/msm/Kconfig b/drivers/gpu/msm/Kconfig
 index ba63fbc..deeafd6 100644
@@ -1650,12 +1648,12 @@ index ba63fbc..deeafd6 100644
 +	---help---
 +	  A simple KGSL GPU govenor for Qualcom Adreno XXX devices
 diff --git a/drivers/gpu/msm/Makefile b/drivers/gpu/msm/Makefile
-index 53b7b94..5aefe19 100644
+index 53b7b94..56f0a23 100644
 --- a/drivers/gpu/msm/Makefile
 +++ b/drivers/gpu/msm/Makefile
 @@ -1,4 +1,4 @@
 -ccflags-y := -Iinclude/uapi/drm -Iinclude/drm -Idrivers/gpu/msm
-+ccflags-y := -Iinclude/uapi/drm -Iinclude/drm -Idrivers/gpu/msm -O2 -mcpu=cortex-a15 -mfpu=neon-vfpv4 -ftree-vectorize
++ccflags-y := -Iinclude/uapi/drm -Iinclude/drm -Idrivers/gpu/msm -mcpu=cortex-a15 -mfpu=neon-vfpv4
  
  msm_kgsl_core-y = \
  	kgsl.o \
@@ -1933,7 +1931,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index d89415a..0928534 100644
+index d89415a..a94ef29 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -2415,20 +2413,20 @@ index d89415a..0928534 100644
 +	if (data->s2w.enabled || data->dt2w.enabled)
 +		irq_set_irq_wake(data->irq, 1);
 +
-+
-+
 +#endif
- 	return 0;
 +#ifdef CONFIG_S2W
 +out:
++	return 0;
++
++free_object_table:
++	kfree(data->object_table);
++	return error;
++#else
+ 	return 0;
  
  free_object_table:
  	kfree(data->object_table);
  	return error;
-+#else
-+free_object_table:
-+	kfree(data->object_table);
-+	return error;
 +#endif
  }
  
@@ -2617,6 +2615,35 @@ index 6152bc2..f2c24ba 100644
  static int wcd9xxx_write(struct wcd9xxx *wcd9xxx, unsigned short reg,
  			int bytes, void *src, bool interface_reg)
  {
+diff --git a/drivers/power/pm8921-charger.c b/drivers/power/pm8921-charger.c
+index 579cf63..cbea3e3 100644
+--- a/drivers/power/pm8921-charger.c
++++ b/drivers/power/pm8921-charger.c
+@@ -1670,7 +1670,7 @@ static void __pm8921_charger_vbus_draw(unsigned int mA)
+ 		}
+ 
+ 		/* Check if IUSB_FINE_RES is available */
+-		if ((usb_ma_table[i].value & PM8917_IUSB_FINE_RES)
++		while ((usb_ma_table[i].value & PM8917_IUSB_FINE_RES)
+ 				&& !the_chip->iusb_fine_res)
+ 			i--;
+ 		if (i < 0)
+diff --git a/fs/namespace.c b/fs/namespace.c
+index e608199..10f336e 100644
+--- a/fs/namespace.c
++++ b/fs/namespace.c
+@@ -2361,9 +2361,9 @@ SYSCALL_DEFINE5(mount, char __user *, dev_name, char __user *, dir_name,
+ 		char __user *, type, unsigned long, flags, void __user *, data)
+ {
+ 	int ret;
+-	char *kernel_type;
++	char *kernel_type = NULL;
+ 	char *kernel_dir;
+-	char *kernel_dev;
++	char *kernel_dev = NULL;
+ 	unsigned long data_page;
+ 
+ 	ret = copy_mount_string(type, &kernel_type);
 diff --git a/include/linux/cpufreq.h b/include/linux/cpufreq.h
 index 34edac8..0f52400 100644
 --- a/include/linux/cpufreq.h
