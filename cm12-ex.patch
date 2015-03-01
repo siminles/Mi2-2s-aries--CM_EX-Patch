@@ -1,12 +1,10 @@
- Makefile                                           |   4 +-
  arch/arm/Kconfig                                   |   6 +
- arch/arm/Makefile                                  |   2 +-
  arch/arm/configs/cyanogen_aries_defconfig          |  25 +-
  arch/arm/include/asm/xor.h                         |  73 +++
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
  arch/arm/mach-msm/Makefile                         |   2 +
- arch/arm/mach-msm/acpuclock-8064.c                 | 330 ++++++------
+ arch/arm/mach-msm/acpuclock-8064.c                 | 330 +++++++------
  arch/arm/mach-msm/acpuclock-krait.c                |  49 ++
  arch/arm/mach-msm/board-8064-regulator.c           |  10 +-
  arch/arm/mach-msm/clock-8960.c                     |  81 ++-
@@ -15,21 +13,17 @@
  arch/arm/mach-msm/include/mach/kgsl.h              |   2 +
  arch/arm/mach-msm/xiaomi/aries/board-aries-gpu.c   |  24 +-
  .../mach-msm/xiaomi/aries/board-aries-regulator.c  |  10 +-
- arch/arm/vfp/Makefile                              |   2 +-
  arch/arm/vfp/vfphw.S                               |   5 +
  arch/arm/vfp/vfpmodule.c                           |  81 ++-
  crypto/Kconfig                                     |  33 ++
  drivers/cpufreq/Kconfig                            |  26 +
  drivers/cpufreq/Makefile                           |   1 +
- drivers/cpufreq/cpufreq.c                          | 110 ++++
- drivers/gpu/ion/Makefile                           |   1 +
- drivers/gpu/ion/msm/Makefile                       |   1 +
+ drivers/cpufreq/cpufreq.c                          | 110 +++++
  drivers/gpu/msm/Kconfig                            |   7 +
- drivers/gpu/msm/Makefile                           |   2 +-
  drivers/gpu/msm/kgsl_pwrctrl.c                     |  69 ++-
  drivers/gpu/msm/kgsl_pwrscale_trustzone.c          |  76 +++
  drivers/input/touchscreen/Kconfig                  |   6 +
- drivers/input/touchscreen/atmel_mxt_ts.c           | 551 ++++++++++++++++++++-
+ drivers/input/touchscreen/atmel_mxt_ts.c           | 546 ++++++++++++++++++++-
  drivers/mfd/wcd9xxx-core.c                         |  16 +
  drivers/power/pm8921-charger.c                     |   2 +-
  fs/namespace.c                                     |   4 +-
@@ -38,25 +32,8 @@
  sound/soc/codecs/Kconfig                           |  12 +
  sound/soc/codecs/Makefile                          |   4 +
  sound/soc/codecs/wcd9310.c                         |  86 +++-
- 40 files changed, 1644 insertions(+), 215 deletions(-)
+ 34 files changed, 1631 insertions(+), 211 deletions(-)
 
-diff --git a/Makefile b/Makefile
-index b914f2c..32aae61 100644
---- a/Makefile
-+++ b/Makefile
-@@ -374,10 +374,10 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
- 		   -Wno-format-security \
- 		   -fno-delete-null-pointer-checks
- KBUILD_AFLAGS_KERNEL :=
--KBUILD_CFLAGS_KERNEL :=
-+KBUILD_CFLAGS_KERNEL := -mcpu=cortex-a15 -mfpu=neon-vfpv4
- KBUILD_AFLAGS   := -D__ASSEMBLY__
- KBUILD_AFLAGS_MODULE  := -DMODULE
--KBUILD_CFLAGS_MODULE  := -DMODULE
-+KBUILD_CFLAGS_MODULE  := -DMODULE -mcpu=cortex-a15 -mfpu=neon-vfpv4
- KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
- 
- # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index c2aa5be..9ab752d 100644
 --- a/arch/arm/Kconfig
@@ -74,21 +51,8 @@ index c2aa5be..9ab752d 100644
  endmenu
  
  menu "Userspace binary formats"
-diff --git a/arch/arm/Makefile b/arch/arm/Makefile
-index 6bebe17..eec789f 100644
---- a/arch/arm/Makefile
-+++ b/arch/arm/Makefile
-@@ -79,7 +79,7 @@ arch-$(CONFIG_CPU_32v3)		:=-D__LINUX_ARM_ARCH__=3 -march=armv3
- # keep things simpler, we don't bother with a fallback option if the compiler
- # doesn't even support -march=armv7-a, since in that situation we would have
- # bigger problems.
--arch-$(CONFIG_ARCH_MSM_KRAIT)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a15,-march=armv7-a)
-+arch-$(CONFIG_ARCH_MSM_KRAIT)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a15,-march=armv7-a,-mfpu=neon-vfpv4)
- 
- # This selects how we optimise for the processor.
- tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
-index ceec491..7e16986 100644
+index ceec491..652370f 100644
 --- a/arch/arm/configs/cyanogen_aries_defconfig
 +++ b/arch/arm/configs/cyanogen_aries_defconfig
 @@ -44,7 +44,7 @@ CONFIG_IRQ_WORK=y
@@ -248,7 +212,7 @@ index 7604673..4ffb26d 100644
 +#define NEON_TEMPLATES
 +#endif
 diff --git a/arch/arm/lib/Makefile b/arch/arm/lib/Makefile
-index 8ade75d..e8fc263 100644
+index 8ade75d..5853184 100644
 --- a/arch/arm/lib/Makefile
 +++ b/arch/arm/lib/Makefile
 @@ -46,3 +46,9 @@ lib-$(CONFIG_ARCH_SHARK)	+= io-shark.o
@@ -257,7 +221,7 @@ index 8ade75d..e8fc263 100644
  $(obj)/csumpartialcopyuser.o:	$(obj)/csumpartialcopygeneric.S
 +
 +ifeq ($(CONFIG_KERNEL_MODE_NEON),y)
-+  NEON_FLAGS			:= -mcpu=cortex-a15 -mfpu=neon-vfpv4
++  NEON_FLAGS			:= -mfpu=neon-vfpv4
 +  CFLAGS_xor-neon.o		+= $(NEON_FLAGS)
 +  obj-$(CONFIG_XOR_BLOCKS)	+= xor-neon.o
 +endif
@@ -1192,19 +1156,6 @@ index 19d7b7d..ce2b722 100644
  
  /* PM8921 regulator constraints */
  struct pm8xxx_regulator_platform_data
-diff --git a/arch/arm/vfp/Makefile b/arch/arm/vfp/Makefile
-index a81404c..43e4e05 100644
---- a/arch/arm/vfp/Makefile
-+++ b/arch/arm/vfp/Makefile
-@@ -7,7 +7,7 @@
- # ccflags-y := -DDEBUG
- # asflags-y := -DDEBUG
- 
--KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=softvfp+vfp -mfloat-abi=soft)
-+KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=neon-vfpv4 -mfloat-abi=hard) -mcpu=cortex-a15
- LDFLAGS		+=--no-warn-mismatch
- 
- obj-y			+= vfp.o
 diff --git a/arch/arm/vfp/vfphw.S b/arch/arm/vfp/vfphw.S
 index bd3d771..5a44aef 100644
 --- a/arch/arm/vfp/vfphw.S
@@ -1616,22 +1567,6 @@ index 70cfeed..c1906d1 100644
  
  	return 0;
  }
-diff --git a/drivers/gpu/ion/Makefile b/drivers/gpu/ion/Makefile
-index 51349f6..3406731 100644
---- a/drivers/gpu/ion/Makefile
-+++ b/drivers/gpu/ion/Makefile
-@@ -1,3 +1,4 @@
-+ccflags-y := -mcpu=cortex-a15 -mfpu=neon-vfpv4
- obj-$(CONFIG_ION) +=	ion.o ion_heap.o ion_system_heap.o ion_carveout_heap.o ion_iommu_heap.o ion_cp_heap.o
- obj-$(CONFIG_CMA) += ion_cma_heap.o
- obj-$(CONFIG_ION_TEGRA) += tegra/
-diff --git a/drivers/gpu/ion/msm/Makefile b/drivers/gpu/ion/msm/Makefile
-index 1893405..36c6a40 100644
---- a/drivers/gpu/ion/msm/Makefile
-+++ b/drivers/gpu/ion/msm/Makefile
-@@ -1 +1,2 @@
-+ccflags-y := -mcpu=cortex-a15 -mfpu=neon-vfpv4
- obj-y += msm_ion.o ion_cp_common.o
 diff --git a/drivers/gpu/msm/Kconfig b/drivers/gpu/msm/Kconfig
 index ba63fbc..deeafd6 100644
 --- a/drivers/gpu/msm/Kconfig
@@ -1647,16 +1582,6 @@ index ba63fbc..deeafd6 100644
 +	depends on MSM_KGSL
 +	---help---
 +	  A simple KGSL GPU govenor for Qualcom Adreno XXX devices
-diff --git a/drivers/gpu/msm/Makefile b/drivers/gpu/msm/Makefile
-index 53b7b94..56f0a23 100644
---- a/drivers/gpu/msm/Makefile
-+++ b/drivers/gpu/msm/Makefile
-@@ -1,4 +1,4 @@
--ccflags-y := -Iinclude/uapi/drm -Iinclude/drm -Idrivers/gpu/msm
-+ccflags-y := -Iinclude/uapi/drm -Iinclude/drm -Idrivers/gpu/msm -mcpu=cortex-a15 -mfpu=neon-vfpv4
- 
- msm_kgsl_core-y = \
- 	kgsl.o \
 diff --git a/drivers/gpu/msm/kgsl_pwrctrl.c b/drivers/gpu/msm/kgsl_pwrctrl.c
 index e7eaa93..31f2428 100644
 --- a/drivers/gpu/msm/kgsl_pwrctrl.c
@@ -1931,7 +1856,7 @@ index dc6d78b..c645c53 100644
  	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
  	help
 diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
-index d89415a..a94ef29 100644
+index d89415a..eee4845 100644
 --- a/drivers/input/touchscreen/atmel_mxt_ts.c
 +++ b/drivers/input/touchscreen/atmel_mxt_ts.c
 @@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
@@ -2137,16 +2062,16 @@ index d89415a..a94ef29 100644
 +	&dev_attr_dt2w_delta_x.attr,
 +	&dev_attr_dt2w_delta_y.attr,
 +	NULL
-+};
-+
+ };
+ 
 +static const struct attribute_group dt2w_attr_group = {
 +	.attrs = dt2w_attrs,
 +};
 +
 +static const struct attribute_group s2w_attr_group = {
 +	.attrs = s2w_attrs,
- };
- 
++};
++
 +static void dt2w_presspwr_work(struct work_struct *work)
 +{
 +	struct mxt_dt2w *dt2w = container_of(work, struct mxt_dt2w, work);
@@ -2384,10 +2309,11 @@ index d89415a..a94ef29 100644
  	}
  
  	error = __mxt_read_reg(client, data->t7_start_addr,
-@@ -1890,11 +2289,46 @@ static int mxt_initialize(struct mxt_data *data)
+@@ -1890,8 +2289,36 @@ static int mxt_initialize(struct mxt_data *data)
  			"Matrix X Size: %d Matrix Y Size: %d\n",
  			info->matrix_xsize, info->matrix_ysize);
  
+-	return 0;
 +#ifdef CONFIG_S2W
 +	// wake common
 +	data->wake_common.suspended = 0;
@@ -2409,29 +2335,19 @@ index d89415a..a94ef29 100644
 +	data->dt2w.timeout_min = DT2W_TIMEOUT_MIN;
 +	data->dt2w.delta_x = DT2W_DELTA_X;
 +	data->dt2w.delta_y = DT2W_DELTA_Y;
-+
+ 
 +	if (data->s2w.enabled || data->dt2w.enabled)
 +		irq_set_irq_wake(data->irq, 1);
 +
 +#endif
++	return 0;
 +#ifdef CONFIG_S2W
 +out:
-+	return 0;
-+
-+free_object_table:
-+	kfree(data->object_table);
-+	return error;
-+#else
- 	return 0;
- 
++#endif
  free_object_table:
  	kfree(data->object_table);
  	return error;
-+#endif
- }
- 
- static ssize_t mxt_dbgdump_show(struct device *dev,
-@@ -2179,6 +2613,18 @@ static ssize_t mxt_update_fw_store(struct device *dev,
+@@ -2179,6 +2606,18 @@ static ssize_t mxt_update_fw_store(struct device *dev,
  	u8 bootldr_id;
  	struct input_dev *input_dev = data->input_dev;
  
@@ -2450,7 +2366,7 @@ index d89415a..a94ef29 100644
  	if (count > 0) {
  		fw_name = buf;
  		dev_info(dev, "Identify firmware name :%s \n", fw_name);
-@@ -2866,6 +3312,18 @@ static int mxt_suspend(struct device *dev)
+@@ -2866,6 +3305,18 @@ static int mxt_suspend(struct device *dev)
  	struct input_dev *input_dev = data->input_dev;
  	int error;
  
@@ -2469,7 +2385,7 @@ index d89415a..a94ef29 100644
  	disable_irq(data->irq);
  
  	mutex_lock(&input_dev->mutex);
-@@ -2907,6 +3365,20 @@ static int mxt_resume(struct device *dev)
+@@ -2907,6 +3358,20 @@ static int mxt_resume(struct device *dev)
  	struct input_dev *input_dev = data->input_dev;
  	int error;
  
@@ -2490,7 +2406,7 @@ index d89415a..a94ef29 100644
  	/* put regulators in high power mode */
  	error = mxt_regulator_lpm(data, false);
  	if (error < 0) {
-@@ -3241,6 +3713,57 @@ static int __devinit mxt_probe(struct i2c_client *client,
+@@ -3241,6 +3706,57 @@ static int __devinit mxt_probe(struct i2c_client *client,
  	if (error)
  		goto err_unregister_device;
  
@@ -2548,7 +2464,7 @@ index d89415a..a94ef29 100644
  #if defined(CONFIG_HAS_EARLYSUSPEND)
  	data->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN +
  						MXT_SUSPEND_LEVEL;
-@@ -3271,6 +3794,25 @@ static int __devinit mxt_probe(struct i2c_client *client,
+@@ -3271,6 +3787,25 @@ static int __devinit mxt_probe(struct i2c_client *client,
  	mxt_handle_extra_touchdata(data, MXT_REFERENCE_DATA);
  	return 0;
  
@@ -2574,7 +2490,7 @@ index d89415a..a94ef29 100644
  err_remove_sysfs_group:
  	sysfs_remove_group(&client->dev.kobj, &mxt_attr_group);
  err_unregister_device:
-@@ -3311,6 +3853,13 @@ static int __devexit mxt_remove(struct i2c_client *client)
+@@ -3311,6 +3846,13 @@ static int __devexit mxt_remove(struct i2c_client *client)
  	cancel_delayed_work_sync(&data->force_calibrate_delayed_work);
  	cancel_delayed_work_sync(&data->disable_antipalm_delayed_work);
  	free_irq(data->irq, data);
