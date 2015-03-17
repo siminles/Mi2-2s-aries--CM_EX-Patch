@@ -19,7 +19,7 @@
  drivers/cpufreq/Kconfig                            |  26 +
  drivers/cpufreq/Makefile                           |   1 +
  drivers/cpufreq/cpufreq.c                          | 319 +++++++++---
- drivers/cpufreq/cpufreq_stats.c                    |   4 +-
+ drivers/cpufreq/cpufreq_stats.c                    |  12 +-
  drivers/gpu/msm/Kconfig                            |   7 +
  drivers/gpu/msm/kgsl_pwrctrl.c                     |  69 ++-
  drivers/gpu/msm/kgsl_pwrscale_trustzone.c          |  76 +++
@@ -28,7 +28,7 @@
  drivers/power/pm8921-charger.c                     |   2 +-
  fs/namespace.c                                     |   4 +-
  include/linux/cpufreq.h                            |  11 +-
- 30 files changed, 1661 insertions(+), 275 deletions(-)
+ 30 files changed, 1665 insertions(+), 279 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index c2aa5be..9ab752d 100644
@@ -1948,10 +1948,10 @@ index 70cfeed..95659e2 100644
  	return 0;
  }
 diff --git a/drivers/cpufreq/cpufreq_stats.c b/drivers/cpufreq/cpufreq_stats.c
-index 665fb47..ae1403e 100644
+index 665fb47..faaf1fd 100644
 --- a/drivers/cpufreq/cpufreq_stats.c
 +++ b/drivers/cpufreq/cpufreq_stats.c
-@@ -269,7 +269,7 @@ static void cpufreq_stats_free_sysfs(unsigned int cpu)
+@@ -269,26 +269,26 @@ static void cpufreq_stats_free_sysfs(unsigned int cpu)
  {
  	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
  	if (policy && policy->cpu == cpu)
@@ -1960,6 +1960,29 @@ index 665fb47..ae1403e 100644
  	if (policy)
  		cpufreq_cpu_put(policy);
  }
+ 
+ static void cpufreq_allstats_free(void)
+ {
+-	int i;
++	int cpu;
+ 	struct all_cpufreq_stats *all_stat;
+ 
+ 	sysfs_remove_file(cpufreq_global_kobject,
+ 						&_attr_all_time_in_state.attr);
+ 
+-	for (i = 0; i < total_cpus; i++) {
+-		all_stat = per_cpu(all_cpufreq_stats, i);
++	for_each_possible_cpu(cpu) {
++		all_stat = per_cpu(all_cpufreq_stats, cpu);
+ 		if (!all_stat)
+ 			continue;
+ 		kfree(all_stat->time_in_state);
+ 		kfree(all_stat);
+-		per_cpu(all_cpufreq_stats, i) = NULL;
++		per_cpu(all_cpufreq_stats, cpu) = NULL;
+ 	}
+ 	if (all_freq_table) {
+ 		kfree(all_freq_table->freq_table);
 @@ -317,7 +317,7 @@ static int cpufreq_stats_create_table(struct cpufreq_policy *policy,
  		goto error_get_fail;
  	}
