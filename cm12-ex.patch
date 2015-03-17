@@ -1,5 +1,5 @@
  arch/arm/Kconfig                                   |   6 +
- arch/arm/configs/cyanogen_aries_defconfig          |  25 +-
+ arch/arm/configs/cyanogen_aries_defconfig          |  19 +-
  arch/arm/include/asm/xor.h                         |  73 +++
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
@@ -27,7 +27,7 @@
  drivers/power/pm8921-charger.c                     |   2 +-
  fs/namespace.c                                     |   4 +-
  include/linux/cpufreq.h                            |   3 +
- 34 files changed, 1631 insertions(+), 211 deletions(-)
+ 29 files changed, 1522 insertions(+), 193 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index c2aa5be..9ab752d 100644
@@ -47,7 +47,7 @@ index c2aa5be..9ab752d 100644
  
  menu "Userspace binary formats"
 diff --git a/arch/arm/configs/cyanogen_aries_defconfig b/arch/arm/configs/cyanogen_aries_defconfig
-index ceec491..652370f 100644
+index ceec491..2e28a39 100644
 --- a/arch/arm/configs/cyanogen_aries_defconfig
 +++ b/arch/arm/configs/cyanogen_aries_defconfig
 @@ -44,7 +44,7 @@ CONFIG_IRQ_WORK=y
@@ -68,21 +68,6 @@ index ceec491..652370f 100644
  CONFIG_SYSCTL=y
  CONFIG_ANON_INODES=y
  CONFIG_PANIC_TIMEOUT=5
-@@ -225,11 +225,11 @@ CONFIG_IOSCHED_NOOP=y
- CONFIG_IOSCHED_DEADLINE=y
- CONFIG_IOSCHED_ROW=y
- CONFIG_IOSCHED_CFQ=y
--# CONFIG_DEFAULT_DEADLINE is not set
--CONFIG_DEFAULT_ROW=y
-+CONFIG_DEFAULT_DEADLINE=y
-+# CONFIG_DEFAULT_ROW is not set
- # CONFIG_DEFAULT_CFQ is not set
- # CONFIG_DEFAULT_NOOP is not set
--CONFIG_DEFAULT_IOSCHED="row"
-+CONFIG_DEFAULT_IOSCHED="deadline"
- # CONFIG_INLINE_SPIN_TRYLOCK is not set
- # CONFIG_INLINE_SPIN_TRYLOCK_BH is not set
- # CONFIG_INLINE_SPIN_LOCK is not set
 @@ -3379,6 +3379,7 @@ CONFIG_CRYPTO_MD5=y
  # CONFIG_CRYPTO_RMD256 is not set
  # CONFIG_CRYPTO_RMD320 is not set
