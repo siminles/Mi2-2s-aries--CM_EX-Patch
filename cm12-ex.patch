@@ -4,7 +4,7 @@
  arch/arm/lib/Makefile                              |   6 +
  arch/arm/mach-msm/Kconfig                          |  18 +
  arch/arm/mach-msm/Makefile                         |   2 +
- arch/arm/mach-msm/acpuclock-8064.c                 | 330 +++++++------
+ arch/arm/mach-msm/acpuclock-8064.c                 | 337 +++++++------
  arch/arm/mach-msm/acpuclock-krait.c                |  49 ++
  arch/arm/mach-msm/board-8064-regulator.c           |  10 +-
  arch/arm/mach-msm/clock-8960.c                     |  81 ++-
@@ -28,7 +28,7 @@
  drivers/power/pm8921-charger.c                     |   2 +-
  fs/namespace.c                                     |   4 +-
  include/linux/cpufreq.h                            |  11 +-
- 30 files changed, 1665 insertions(+), 280 deletions(-)
+ 30 files changed, 1672 insertions(+), 280 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index c2aa5be..9ab752d 100644
@@ -246,7 +246,7 @@ index debe164..7e9c125 100644
 +
 +obj-$(CONFIG_MSM_SLEEPER) += msm-sleeper.o
 diff --git a/arch/arm/mach-msm/acpuclock-8064.c b/arch/arm/mach-msm/acpuclock-8064.c
-index 8262946..fba3e79 100644
+index 8262946..e98f10f 100644
 --- a/arch/arm/mach-msm/acpuclock-8064.c
 +++ b/arch/arm/mach-msm/acpuclock-8064.c
 @@ -98,6 +98,7 @@ static struct scalable scalable[] __initdata = {
@@ -423,7 +423,7 @@ index 8262946..fba3e79 100644
  	{ 0, { 0 } }
  };
  
-@@ -350,132 +361,134 @@ static struct acpu_level tbl_PVS6_1512MHz[] __initdata = {
+@@ -350,132 +361,141 @@ static struct acpu_level tbl_PVS6_1512MHz[] __initdata = {
  	{ 0, { 0 } }
  };
  
@@ -457,6 +457,7 @@ index 8262946..fba3e79 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1125000 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1175000 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1200000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1225000 },
  	{ 0, { 0 } }
  };
  
@@ -520,6 +521,7 @@ index 8262946..fba3e79 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1075000 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1112500 },
  	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1125000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1150000 },
  	{ 0, { 0 } }
  };
  
@@ -547,6 +549,7 @@ index 8262946..fba3e79 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1050000 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1087500 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1112500 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1137500 },
 +	{ 0, { 0 } }
 +};
 +
@@ -565,6 +568,7 @@ index 8262946..fba3e79 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  987500 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1025000 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1050000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1075000 },
 +	{ 0, { 0 } }
 +};
 +
@@ -583,6 +587,7 @@ index 8262946..fba3e79 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  962500 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1000000 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1025000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1050000 },
  	{ 0, { 0 } }
  };
  
@@ -615,6 +620,7 @@ index 8262946..fba3e79 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  937500 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14),  975000 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1000000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1025000 },
  	{ 0, { 0 } }
  };
  
@@ -647,6 +653,7 @@ index 8262946..fba3e79 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  925000 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14),  950000 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14),  975000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1000000 },
  	{ 0, { 0 } }
  };
  
@@ -654,7 +661,7 @@ index 8262946..fba3e79 100644
  static struct acpu_level tbl_PVS0_2000MHz[] __initdata = {
  	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   950000 },
  	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   950000 },
-@@ -609,6 +622,7 @@ static struct acpu_level tbl_PVS6_2000MHz[] __initdata = {
+@@ -609,6 +629,7 @@ static struct acpu_level tbl_PVS6_2000MHz[] __initdata = {
  	{ 0, { 0 } }
  };
  
