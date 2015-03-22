@@ -25,10 +25,12 @@
  drivers/input/touchscreen/Kconfig                  |   6 +
  drivers/input/touchscreen/atmel_mxt_ts.c           | 544 ++++++++++++++++++++-
  drivers/power/pm8921-charger.c                     |   2 +-
+ drivers/usb/gadget/f_qdss.c                        |   4 +-
  drivers/video/msm/mipi_hitachi.c                   |   4 +-
  fs/namespace.c                                     |   4 +-
  include/linux/cpufreq.h                            |  11 +-
- 30 files changed, 1653 insertions(+), 275 deletions(-)
+ net/bluetooth/hci_conn.c                           |   2 +-
+ 32 files changed, 1656 insertions(+), 278 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index 1afb325..59794fa 100644
@@ -2876,6 +2878,28 @@ index 579cf63..cbea3e3 100644
  				&& !the_chip->iusb_fine_res)
  			i--;
  		if (i < 0)
+diff --git a/drivers/usb/gadget/f_qdss.c b/drivers/usb/gadget/f_qdss.c
+index 26e4bd5..99624b5 100644
+--- a/drivers/usb/gadget/f_qdss.c
++++ b/drivers/usb/gadget/f_qdss.c
+@@ -583,7 +583,7 @@ static int qdss_bind_config(struct usb_configuration *c, const char *name)
+ 
+ 	spin_lock_irqsave(&d_lock, flags);
+ 	list_for_each_entry(ch, &usb_qdss_ch_list, list) {
+-		if (!strncmp(name, ch->name, sizeof(ch->name))) {
++		if (!strcmp(name, ch->name)) {
+ 			found = 1;
+ 			break;
+ 		}
+@@ -737,7 +737,7 @@ struct usb_qdss_ch *usb_qdss_open(const char *name, void *priv,
+ 	spin_lock_irqsave(&d_lock, flags);
+ 	/* Check if we already have a channel with this name */
+ 	list_for_each_entry(ch, &usb_qdss_ch_list, list) {
+-		if (!strncmp(name, ch->name, sizeof(ch->name))) {
++		if (!strcmp(name, ch->name)) {
+ 			found = 1;
+ 			break;
+ 		}
 diff --git a/drivers/video/msm/mipi_hitachi.c b/drivers/video/msm/mipi_hitachi.c
 index 8cf7dc0..dd52cef 100644
 --- a/drivers/video/msm/mipi_hitachi.c
@@ -2939,3 +2963,16 @@ index 34edac8..e765706 100644
  #endif
  
  
+diff --git a/net/bluetooth/hci_conn.c b/net/bluetooth/hci_conn.c
+index 50f73be..e0cc02c 100644
+--- a/net/bluetooth/hci_conn.c
++++ b/net/bluetooth/hci_conn.c
+@@ -403,7 +403,7 @@ void hci_le_ltk_reply(struct hci_conn *conn, u8 ltk[16])
+ 	memset(&cp, 0, sizeof(cp));
+ 
+ 	cp.handle = cpu_to_le16(conn->handle);
+-	memcpy(cp.ltk, ltk, sizeof(ltk));
++	memcpy(cp.ltk, ltk, sizeof(cp.ltk));
+ 
+ 	hci_send_cmd(hdev, HCI_OP_LE_LTK_REPLY, sizeof(cp), &cp);
+ }
