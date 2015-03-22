@@ -10,7 +10,9 @@ export CROSS_COMPILE=/home/simin/gcctools/gcc-a15/arm-cortex_a15-linux-gnueabihf
 
 # make zImage
 mkdir -p ./out/done/modules/
-# make O=./out cyanogen_ex_aries_defconfig
+#cm11的配置文件
+# make O=./out cyanogen_cm11-ex_aries_defconfig
+#cm12的配置文件
 make O=./out cyanogen_aries_defconfig
 make -j8 O=./out
 
