@@ -193,7 +193,7 @@ index 7604673..4ffb26d 100644
 +#define NEON_TEMPLATES
 +#endif
 diff --git a/arch/arm/lib/Makefile b/arch/arm/lib/Makefile
-index 8ade75d..5853184 100644
+index 8ade75d..c16227e 100644
 --- a/arch/arm/lib/Makefile
 +++ b/arch/arm/lib/Makefile
 @@ -46,3 +46,9 @@ lib-$(CONFIG_ARCH_SHARK)	+= io-shark.o
@@ -202,7 +202,7 @@ index 8ade75d..5853184 100644
  $(obj)/csumpartialcopyuser.o:	$(obj)/csumpartialcopygeneric.S
 +
 +ifeq ($(CONFIG_KERNEL_MODE_NEON),y)
-+  NEON_FLAGS			:= -mfpu=neon-vfpv4
++  NEON_FLAGS			:= mcpu=cortex-a15 -mfloat-abi=hard -mfpu=neon-vfpv4
 +  CFLAGS_xor-neon.o		+= $(NEON_FLAGS)
 +  obj-$(CONFIG_XOR_BLOCKS)	+= xor-neon.o
 +endif
@@ -246,7 +246,7 @@ index debe164..7e9c125 100644
 +
 +obj-$(CONFIG_MSM_SLEEPER) += msm-sleeper.o
 diff --git a/arch/arm/mach-msm/acpuclock-8064.c b/arch/arm/mach-msm/acpuclock-8064.c
-index 8262946..58d1a6d 100644
+index 8262946..b7c619d 100644
 --- a/arch/arm/mach-msm/acpuclock-8064.c
 +++ b/arch/arm/mach-msm/acpuclock-8064.c
 @@ -98,6 +98,7 @@ static struct scalable scalable[] __initdata = {
@@ -530,8 +530,8 @@ index 8262946..58d1a6d 100644
 -	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   875000 },
 -	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   875000 },
 +static struct acpu_level tbl_PVS2_1700MHz[] __initdata = {
-+	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   800000 },
-+	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   825000 },
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   825000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   837500 },
 +	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   850000 },
  	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   875000 },
  	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   887500 },
@@ -549,7 +549,7 @@ index 8262946..58d1a6d 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1050000 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1087500 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1112500 },
-+	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1162500 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1150000 },
 +	{ 0, { 0 } }
 +};
 +
