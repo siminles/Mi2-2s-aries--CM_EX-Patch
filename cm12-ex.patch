@@ -26,9 +26,10 @@
  drivers/input/touchscreen/Kconfig                  |   6 +
  drivers/input/touchscreen/atmel_mxt_ts.c           | 546 ++++++++++++++++++++-
  drivers/power/pm8921-charger.c                     |   2 +-
+ drivers/video/msm/mipi_hitachi.c                   |   4 +-
  fs/namespace.c                                     |   4 +-
  include/linux/cpufreq.h                            |  11 +-
- 30 files changed, 1672 insertions(+), 280 deletions(-)
+ 31 files changed, 1674 insertions(+), 282 deletions(-)
 
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index c2aa5be..9ab752d 100644
@@ -246,7 +247,7 @@ index debe164..7e9c125 100644
 +
 +obj-$(CONFIG_MSM_SLEEPER) += msm-sleeper.o
 diff --git a/arch/arm/mach-msm/acpuclock-8064.c b/arch/arm/mach-msm/acpuclock-8064.c
-index 8262946..b7c619d 100644
+index 8262946..231df89 100644
 --- a/arch/arm/mach-msm/acpuclock-8064.c
 +++ b/arch/arm/mach-msm/acpuclock-8064.c
 @@ -98,6 +98,7 @@ static struct scalable scalable[] __initdata = {
@@ -521,7 +522,7 @@ index 8262946..b7c619d 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1075000 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1112500 },
  	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1125000 },
-+	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1175000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1220000 },
  	{ 0, { 0 } }
  };
  
@@ -549,7 +550,7 @@ index 8262946..b7c619d 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1050000 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1087500 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1112500 },
-+	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1150000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1162500 },
 +	{ 0, { 0 } }
 +};
 +
@@ -568,7 +569,7 @@ index 8262946..b7c619d 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  987500 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1025000 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1050000 },
-+	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1100000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1125000 },
 +	{ 0, { 0 } }
 +};
 +
@@ -587,7 +588,7 @@ index 8262946..b7c619d 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  962500 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1000000 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1025000 },
-+	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1075000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1100000 },
  	{ 0, { 0 } }
  };
  
@@ -620,7 +621,7 @@ index 8262946..b7c619d 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  937500 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14),  975000 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1000000 },
-+	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1050000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1075000 },
  	{ 0, { 0 } }
  };
  
@@ -653,7 +654,7 @@ index 8262946..b7c619d 100644
 +	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  925000 },
 +	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14),  950000 },
 +	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14),  975000 },
-+	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1025000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1050000 },
  	{ 0, { 0 } }
  };
  
@@ -2957,6 +2958,21 @@ index 579cf63..cbea3e3 100644
  				&& !the_chip->iusb_fine_res)
  			i--;
  		if (i < 0)
+diff --git a/drivers/video/msm/mipi_hitachi.c b/drivers/video/msm/mipi_hitachi.c
+index 8cf7dc0..dd52cef 100644
+--- a/drivers/video/msm/mipi_hitachi.c
++++ b/drivers/video/msm/mipi_hitachi.c
+@@ -35,8 +35,8 @@ static struct dsi_buf hitachi_tx_buf;
+ static struct dsi_buf hitachi_rx_buf;
+ static struct msm_fb_data_type *local_mfd;
+ static int lcd_isactive = 0;
+-static int lcd_ce_enabled = 0;
+-static int lcd_cabc_enabled = 0;
++static int lcd_ce_enabled = 1;
++static int lcd_cabc_enabled = 1;
+ 
+ static ssize_t kgamma_apply_store(struct device *dev, struct device_attribute *attr,
+ 						const char *buf, size_t count);
 diff --git a/fs/namespace.c b/fs/namespace.c
 index e608199..10f336e 100644
 --- a/fs/namespace.c
