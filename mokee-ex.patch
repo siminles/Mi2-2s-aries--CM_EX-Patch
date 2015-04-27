@@ -1,4 +1,6 @@
+ Makefile                                  |   4 +-
  arch/arm/Kconfig                          |   6 +
+ arch/arm/Makefile                         |   1 +
  arch/arm/configs/aries-perf-usr_defconfig |  16 +-
  arch/arm/crypto/Makefile                  |   1 +
  arch/arm/include/asm/xor.h                |  73 ++++
@@ -15,12 +17,15 @@
  arch/arm/mach-msm/clock-pll.c             |  37 ++
  arch/arm/mach-msm/cpufreq.c               |  79 +++++
  arch/arm/mach-msm/include/mach/kgsl.h     |   2 +
+ arch/arm/vfp/Makefile                     |   2 +-
  arch/arm/vfp/vfphw.S                      |   5 +
  arch/arm/vfp/vfpmodule.c                  |  81 ++++-
  drivers/cpufreq/Kconfig                   |  26 ++
  drivers/cpufreq/Makefile                  |   1 +
  drivers/cpufreq/cpufreq.c                 | 321 +++++++++++++-----
  drivers/cpufreq/cpufreq_stats.c           |   4 +-
+ drivers/gpu/ion/msm/Makefile              |   1 +
+ drivers/gpu/msm/Makefile                  |   2 +-
  drivers/gpu/msm/kgsl_pwrctrl.c            |  69 +++-
  drivers/input/touchscreen/Kconfig         |   6 +
  drivers/input/touchscreen/atmel_mxt_ts.c  | 544 +++++++++++++++++++++++++++++-
@@ -29,8 +34,25 @@
  fs/namespace.c                            |   4 +-
  include/linux/cpufreq.h                   |  11 +-
  net/bluetooth/hci_conn.c                  |   2 +-
- 31 files changed, 1554 insertions(+), 278 deletions(-)
+ 36 files changed, 1560 insertions(+), 282 deletions(-)
 
+diff --git a/Makefile b/Makefile
+index a687963..53e4e3b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -370,10 +370,10 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
+ 		   -Wno-format-security \
+ 		   -fno-delete-null-pointer-checks
+ KBUILD_AFLAGS_KERNEL :=
+-KBUILD_CFLAGS_KERNEL :=
++KBUILD_CFLAGS_KERNEL := -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ KBUILD_AFLAGS   := -D__ASSEMBLY__
+ KBUILD_AFLAGS_MODULE  := -DMODULE
+-KBUILD_CFLAGS_MODULE  := -DMODULE
++KBUILD_CFLAGS_MODULE  := -DMODULE -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
+ 
+ # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
 index fe2c0d2..62f301a 100644
 --- a/arch/arm/Kconfig
@@ -48,6 +70,18 @@ index fe2c0d2..62f301a 100644
  endmenu
  
  menu "Userspace binary formats"
+diff --git a/arch/arm/Makefile b/arch/arm/Makefile
+index d9f4657..4283596 100644
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -68,6 +68,7 @@ arch-$(CONFIG_CPU_32v5)		:=-D__LINUX_ARM_ARCH__=5 $(call cc-option,-march=armv5t
+ arch-$(CONFIG_CPU_32v4T)	:=-D__LINUX_ARM_ARCH__=4 -march=armv4t
+ arch-$(CONFIG_CPU_32v4)		:=-D__LINUX_ARM_ARCH__=4 -march=armv4
+ arch-$(CONFIG_CPU_32v3)		:=-D__LINUX_ARM_ARCH__=3 -march=armv3
++arch-$(CONFIG_ARCH_MSM_KRAIT)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a15,-march=armv7-a,-mfpu=neon-vfpv4)
+ 
+ # This selects how we optimise for the processor.
+ tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 diff --git a/arch/arm/configs/aries-perf-usr_defconfig b/arch/arm/configs/aries-perf-usr_defconfig
 index 5d3d71a..79e4930 100644
 --- a/arch/arm/configs/aries-perf-usr_defconfig
@@ -1144,6 +1178,19 @@ index a22b628..93ed986 100644
  enum kgsl_iommu_context_id {
  	KGSL_IOMMU_CONTEXT_USER = 0,
  	KGSL_IOMMU_CONTEXT_PRIV = 1,
+diff --git a/arch/arm/vfp/Makefile b/arch/arm/vfp/Makefile
+index a81404c..43e4e05 100644
+--- a/arch/arm/vfp/Makefile
++++ b/arch/arm/vfp/Makefile
+@@ -7,7 +7,7 @@
+ # ccflags-y := -DDEBUG
+ # asflags-y := -DDEBUG
+ 
+-KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=softvfp+vfp -mfloat-abi=soft)
++KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=neon-vfpv4 -mfloat-abi=hard) -mcpu=cortex-a15
+ LDFLAGS		+=--no-warn-mismatch
+ 
+ obj-y			+= vfp.o
 diff --git a/arch/arm/vfp/vfphw.S b/arch/arm/vfp/vfphw.S
 index e8a55b7..74a0607 100644
 --- a/arch/arm/vfp/vfphw.S
@@ -1934,6 +1981,23 @@ index 1b421c7..2b48227 100644
  	if (ret)
  		goto error_out;
  
+diff --git a/drivers/gpu/ion/msm/Makefile b/drivers/gpu/ion/msm/Makefile
+index 1893405..36c6a40 100644
+--- a/drivers/gpu/ion/msm/Makefile
++++ b/drivers/gpu/ion/msm/Makefile
+@@ -1 +1,2 @@
++ccflags-y := -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ obj-y += msm_ion.o ion_cp_common.o
+diff --git a/drivers/gpu/msm/Makefile b/drivers/gpu/msm/Makefile
+index fec5363..9dc9dea 100644
+--- a/drivers/gpu/msm/Makefile
++++ b/drivers/gpu/msm/Makefile
+@@ -1,4 +1,4 @@
+-ccflags-y := -Iinclude/drm -Idrivers/gpu/msm
++ccflags-y := -Iinclude/drm -Idrivers/gpu/msm -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ 
+ msm_kgsl_core-y = \
+ 	kgsl.o \
 diff --git a/drivers/gpu/msm/kgsl_pwrctrl.c b/drivers/gpu/msm/kgsl_pwrctrl.c
 index 08ec847..51ff6ee 100644
 --- a/drivers/gpu/msm/kgsl_pwrctrl.c
