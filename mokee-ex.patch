@@ -24,6 +24,7 @@
  drivers/cpufreq/Makefile                  |   1 +
  drivers/cpufreq/cpufreq.c                 | 321 +++++++++++++-----
  drivers/cpufreq/cpufreq_stats.c           |   4 +-
+ drivers/gpu/ion/Makefile                  |   1 +
  drivers/gpu/ion/msm/Makefile              |   1 +
  drivers/gpu/msm/Makefile                  |   2 +-
  drivers/gpu/msm/kgsl_pwrctrl.c            |  69 +++-
@@ -34,7 +35,7 @@
  fs/namespace.c                            |   4 +-
  include/linux/cpufreq.h                   |  11 +-
  net/bluetooth/hci_conn.c                  |   2 +-
- 36 files changed, 1560 insertions(+), 282 deletions(-)
+ 37 files changed, 1561 insertions(+), 282 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index a687963..53e4e3b 100644
@@ -1981,6 +1982,15 @@ index 1b421c7..2b48227 100644
  	if (ret)
  		goto error_out;
  
+diff --git a/drivers/gpu/ion/Makefile b/drivers/gpu/ion/Makefile
+index 51349f6..3406731 100644
+--- a/drivers/gpu/ion/Makefile
++++ b/drivers/gpu/ion/Makefile
+@@ -1,3 +1,4 @@
++ccflags-y := -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ obj-$(CONFIG_ION) +=	ion.o ion_heap.o ion_system_heap.o ion_carveout_heap.o ion_iommu_heap.o ion_cp_heap.o
+ obj-$(CONFIG_CMA) += ion_cma_heap.o
+ obj-$(CONFIG_ION_TEGRA) += tegra/
 diff --git a/drivers/gpu/ion/msm/Makefile b/drivers/gpu/ion/msm/Makefile
 index 1893405..36c6a40 100644
 --- a/drivers/gpu/ion/msm/Makefile
