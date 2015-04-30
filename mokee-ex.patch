@@ -1354,7 +1354,7 @@ index ab48fcf..e791649 100644
  $(obj)/csumpartialcopyuser.o:	$(obj)/csumpartialcopygeneric.S
 +
 +ifeq ($(CONFIG_KERNEL_MODE_NEON),y)
-+  NEON_FLAGS			:= -mcpu=cortex-a15 -mfloat-abi=hard -mfpu=neon-vfpv4
++  NEON_FLAGS			:= -mfpu=neon-vfpv4
 +  CFLAGS_xor-neon.o		+= $(NEON_FLAGS)
 +  obj-$(CONFIG_XOR_BLOCKS)	+= xor-neon.o
 +endif
@@ -23095,7 +23095,7 @@ index a81404c..43e4e05 100644
  # asflags-y := -DDEBUG
  
 -KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=softvfp+vfp -mfloat-abi=soft)
-+KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=neon-vfpv4 -mfloat-abi=hard) -mcpu=cortex-a15
++KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=neon-vfpv4 -mfloat-abi=soft) -mcpu=cortex-a15
  LDFLAGS		+=--no-warn-mismatch
  
  obj-y			+= vfp.o
@@ -30942,29 +30942,6 @@ index 26e4bd5..99624b5 100644
  			found = 1;
  			break;
  		}
-diff --git a/drivers/usb/host/ehci-msm-hsic.c b/drivers/usb/host/ehci-msm-hsic.c
-index 1fc8a0b..32e9b7a 100644
---- a/drivers/usb/host/ehci-msm-hsic.c
-+++ b/drivers/usb/host/ehci-msm-hsic.c
-@@ -560,6 +560,7 @@ static int msm_hsic_reset(struct msm_hsic_hcd *mehci)
- 	struct usb_hcd *hcd = hsic_to_hcd(mehci);
- 	int ret;
- 	struct msm_hsic_host_platform_data *pdata = mehci->dev->platform_data;
-+	u32 temp;
- 
- 	msm_hsic_clk_reset(mehci);
- 
-@@ -617,6 +618,10 @@ static int msm_hsic_reset(struct msm_hsic_hcd *mehci)
- 		ulpi_write(mehci, 0xA9, 0x30);
- 	}
- 
-+	temp = readl_relaxed(USB_GENCONFIG2);
-+	temp &= ~GENCFG2_SYS_CLK_HOST_DEV_GATE_EN;
-+	writel_relaxed(temp, USB_GENCONFIG2);
-+
- 	/*disable auto resume*/
- 	ulpi_write(mehci, ULPI_IFC_CTRL_AUTORESUME, ULPI_CLR(ULPI_IFC_CTRL));
- 
 diff --git a/drivers/video/au1100fb.c b/drivers/video/au1100fb.c
 index ffbce45..1d8d91a 100644
 --- a/drivers/video/au1100fb.c
