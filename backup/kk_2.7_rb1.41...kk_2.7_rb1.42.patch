@@ -1,0 +1,742 @@
+From ad4eb6ea8f19edabbd114a1b4a2b0002d9418c17 Mon Sep 17 00:00:00 2001
+From: Jordan Crouse <jcrouse@codeaurora.org>
+Date: Tue, 14 Jan 2014 10:02:01 -0700
+Subject: [PATCH 01/10] msm: kgsl: Force the ME off before reading the
+ microcode
+
+On A3XX reading the microcode while the CP is running is dangerous
+beyond words.  By setting the offset address for the read, we are
+essentially changing the instruction pointer for the ME while it
+is running causing opcode errors, gpu faults and/or system errors.
+
+We do not want to stop the CP at the beginning of the snapshot
+process beacuse doing so changes the RBBM status and the state of
+the CP registers which may damage the debug effort.  But by the
+time we get to the microcode read we no longer care about the state
+of the registers so we can freely halt the ME just before starting
+the read.
+
+Conflicts:
+	drivers/gpu/msm/adreno_a3xx_snapshot.c
+
+Change-Id: Ic0dedbad85d7ec26915f054dd597e226e8101a29
+Signed-off-by: Jordan Crouse <jcrouse@codeaurora.org>
+Signed-off-by: Sunil Khatri <sunilkh@codeaurora.org>
+---
+ drivers/gpu/msm/adreno_a3xx_snapshot.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+ mode change 100644 => 100755 drivers/gpu/msm/adreno_a3xx_snapshot.c
+
+diff --git a/drivers/gpu/msm/adreno_a3xx_snapshot.c b/drivers/gpu/msm/adreno_a3xx_snapshot.c
+old mode 100644
+new mode 100755
+index 34cac79..b939fa0
+--- a/drivers/gpu/msm/adreno_a3xx_snapshot.c
++++ b/drivers/gpu/msm/adreno_a3xx_snapshot.c
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012,2014 The Linux Foundation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License version 2 and
+@@ -443,6 +443,22 @@ void *a3xx_snapshot(struct adreno_device *adreno_dev, void *snapshot,
+ 	/* Reading these will hang the GPU if it isn't already hung */
+ 
+ 	if (hang) {
++		unsigned int reg;
++
++		/*
++		 * Reading the microcode while the CP will is running will
++		 * basically basically move the CP instruction pointer to
++		 * whatever address we read. Big badaboom ensues. Stop the CP
++		 * (if it isn't already stopped) to ensure that we are safe.
++		 * We do this here and not earlier to avoid corrupting the RBBM
++		 * status and CP registers - by the time we get here we don't
++		 * care about the contents of the CP anymore.
++		 */
++
++		adreno_regread(device, REG_CP_ME_CNTL, &reg);
++		reg |= (1 << 27) | (1 << 28);
++		adreno_regwrite(device, REG_CP_ME_CNTL, reg);
++
+ 		snapshot = kgsl_snapshot_add_section(device,
+ 			KGSL_SNAPSHOT_SECTION_DEBUG, snapshot, remain,
+ 			a3xx_snapshot_cp_pfp_ram, NULL);
+
+From 8880d5bb53b74a4549c295dfbfe8fd10e8474cfb Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Arve=20Hj=C3=B8nnev=C3=A5g?= <arve@android.com>
+Date: Thu, 13 Feb 2014 20:25:06 -0800
+Subject: [PATCH 02/10] Staging: android: binder: More offset validation.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Make sure offsets don't point to overlapping flat_binder_object
+structs.
+
+Conflicts:
+	drivers/staging/android/binder.c
+
+Change-Id: I425ab0c46fbe2b00ed679c5becf9e8140395eb40
+Signed-off-by: Arve Hjønnevåg <arve@android.com>
+Git-commit: 457c3cd05958b8397211ae1f6dd3c3d325f4c0ea
+Git-repo: https://android.googlesource.com/kernel/common/
+Signed-off-by: Neeti Desai <neetid@codeaurora.org>
+Signed-off-by: Ajay Dudani <adudani@codeaurora.org>
+Signed-off-by: Nirmal Abraham <nabrah@codeaurora.org>
+Signed-off-by: Prados Das <prados@codeaurora.org>
+---
+ drivers/staging/android/binder.c | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/staging/android/binder.c b/drivers/staging/android/binder.c
+index 0d21d58..54391b2 100644
+--- a/drivers/staging/android/binder.c
++++ b/drivers/staging/android/binder.c
+@@ -1405,6 +1405,7 @@ static void binder_transaction(struct binder_proc *proc,
+ 	struct binder_transaction *t;
+ 	struct binder_work *tcomplete;
+ 	size_t *offp, *off_end;
++	size_t off_min;
+ 	struct binder_proc *target_proc;
+ 	struct binder_thread *target_thread = NULL;
+ 	struct binder_node *target_node = NULL;
+@@ -1609,18 +1610,23 @@ static void binder_transaction(struct binder_proc *proc,
+ 		goto err_bad_offset;
+ 	}
+ 	off_end = (void *)offp + tr->offsets_size;
++	off_min = 0;
+ 	for (; offp < off_end; offp++) {
+ 		struct flat_binder_object *fp;
+ 		if (*offp > t->buffer->data_size - sizeof(*fp) ||
++		    *offp < off_min ||
+ 		    t->buffer->data_size < sizeof(*fp) ||
+-		    !IS_ALIGNED(*offp, sizeof(void *))) {
+-			binder_user_error("binder: %d:%d got transaction with "
+-				"invalid offset, %zd\n",
+-				proc->pid, thread->pid, *offp);
++		    !IS_ALIGNED(*offp, sizeof(u32))) {
++			binder_user_error("%d:%d got transaction with invalid offset, %lld (min %lld, max %lld)\n",
++					  proc->pid, thread->pid, (u64)*offp,
++					  (u64)off_min,
++					  (u64)(t->buffer->data_size -
++					  sizeof(*fp)));
+ 			return_error = BR_FAILED_REPLY;
+ 			goto err_bad_offset;
+ 		}
+ 		fp = (struct flat_binder_object *)(t->buffer->data + *offp);
++		off_min = *offp + sizeof(struct flat_binder_object);
+ 		switch (fp->type) {
+ 		case BINDER_TYPE_BINDER:
+ 		case BINDER_TYPE_WEAK_BINDER: {
+
+From b31e7264d1a89699ee2eef53c1c0fa31fd41384b Mon Sep 17 00:00:00 2001
+From: Shubhraprakash Das <sadas@codeaurora.org>
+Date: Wed, 26 Mar 2014 16:06:29 -0700
+Subject: [PATCH 03/10] msm: kgsl: Increase the timeout value for fault
+ detection
+
+Increment the timeout value for detecting faults from 50ms to
+200ms. The fault detection mechanism is a backup to hardware
+fault detection. 50ms is small since it has been observed that
+this mechanism triggers false positives with 50ms.
+
+CRs-Fixed: 672164
+Change-Id: I8f382051e06bdc47f152309a2868092e1980604e
+Signed-off-by: Shubhraprakash Das <sadas@codeaurora.org>
+Signed-off-by: Tarun Karra <tkarra@codeaurora.org>
+Signed-off-by: Sunil Khatri <sunilkh@codeaurora.org>
+---
+ drivers/gpu/msm/adreno.c       | 24 ++++++++++++------------
+ drivers/gpu/msm/kgsl.c         |  6 +++---
+ drivers/gpu/msm/kgsl_device.h  |  1 +
+ drivers/gpu/msm/kgsl_pwrctrl.c |  4 ++--
+ 4 files changed, 18 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/gpu/msm/adreno.c b/drivers/gpu/msm/adreno.c
+index b859192..1f76c03 100644
+--- a/drivers/gpu/msm/adreno.c
++++ b/drivers/gpu/msm/adreno.c
+@@ -137,7 +137,7 @@ static struct adreno_device device_3d0 = {
+ 
+ /* This set of registers are used for Hang detection
+  * If the values of these registers are same after
+- * KGSL_TIMEOUT_PART time, GPU hang is reported in
++ * KGSL_TIMEOUT_HANG_DETECT time, GPU hang is reported in
+  * kernel log.
+  * *****ALERT******ALERT********ALERT*************
+  * Order of registers below is important, registers
+@@ -557,7 +557,7 @@ static irqreturn_t adreno_irq_handler(struct kgsl_device *device)
+ 	mod_timer_pending(&device->idle_timer,
+ 		jiffies + device->pwrctrl.interval_timeout);
+ 	mod_timer_pending(&device->hang_timer,
+-		(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++		(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 	return result;
+ }
+ 
+@@ -1720,7 +1720,7 @@ static int adreno_start(struct kgsl_device *device)
+ 	}
+ 
+         mod_timer(&device->hang_timer,
+-		(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++		(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 
+ 	device->reset_counter++;
+ 
+@@ -2596,7 +2596,7 @@ adreno_dump_and_exec_ft(struct kgsl_device *device)
+ 			mod_timer(&device->idle_timer, jiffies + FIRST_TIMEOUT);
+ 			mod_timer(&device->hang_timer,
+ 				(jiffies +
+-				msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++				msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 		}
+ 		complete_all(&device->ft_gate);
+ 	}
+@@ -3016,7 +3016,7 @@ static int adreno_ringbuffer_drain(struct kgsl_device *device,
+ 	/*
+ 	 * The first time into the loop, wait for 100 msecs and kick wptr again
+ 	 * to ensure that the hardware has updated correctly.  After that, kick
+-	 * it periodically every KGSL_TIMEOUT_PART msecs until the timeout
++	 * it periodically every KGSL_TIMEOUT_HANG_DETECT msecs until the timeout
+ 	 * expires
+ 	 */
+ 
+@@ -3028,7 +3028,7 @@ static int adreno_ringbuffer_drain(struct kgsl_device *device,
+ 			if (adreno_ft_detect(device, regs))
+ 				return -ETIMEDOUT;
+ 
+-			wait = jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART);
++			wait = jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT);
+ 		}
+ 		GSL_RB_GET_READPTR(rb, &rb->rptr);
+ 
+@@ -3063,7 +3063,7 @@ int adreno_idle(struct kgsl_device *device)
+ 
+ 	/* now, wait for the GPU to finish its operations */
+ 	wait_time = jiffies + msecs_to_jiffies(ADRENO_IDLE_TIMEOUT);
+-	wait_time_part = jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART);
++	wait_time_part = jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT);
+ 
+ 	while (time_before(jiffies, wait_time)) {
+ 		if (adreno_isidle(device))
+@@ -3072,7 +3072,7 @@ int adreno_idle(struct kgsl_device *device)
+ 		/* Dont wait for timeout, detect hang faster.  */
+ 		if (time_after(jiffies, wait_time_part)) {
+ 			wait_time_part = jiffies +
+-				msecs_to_jiffies(KGSL_TIMEOUT_PART);
++				msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT);
+ 			if ((adreno_ft_detect(device, prev_reg_val)))
+ 				goto err;
+ 		}
+@@ -3441,8 +3441,8 @@ unsigned int adreno_ft_detect(struct kgsl_device *device,
+ 	}
+ 
+ 	/*
+-	 * Time interval between hang detection should be KGSL_TIMEOUT_PART
+-	 * or more, if next hang detection is requested < KGSL_TIMEOUT_PART
++	 * Time interval between hang detection should be KGSL_TIMEOUT_HANG_DETECT
++	 * or more, if next hang detection is requested < KGSL_TIMEOUT_HANG_DETECT
+ 	 * from the last time do nothing.
+ 	 */
+ 	if ((next_hang_detect_time) &&
+@@ -3450,7 +3450,7 @@ unsigned int adreno_ft_detect(struct kgsl_device *device,
+ 			return 0;
+ 	else
+ 		next_hang_detect_time = (jiffies +
+-			msecs_to_jiffies(KGSL_TIMEOUT_PART-1));
++			msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT));
+ 
+ 	/* Read the current Hang detect reg values here */
+ 	for (i = 0; i < FT_DETECT_REGS_COUNT; i++) {
+@@ -3522,7 +3522,7 @@ unsigned int adreno_ft_detect(struct kgsl_device *device,
+ 
+ 		if (curr_context != NULL) {
+ 
+-			curr_context->ib_gpu_time_used += KGSL_TIMEOUT_PART;
++			curr_context->ib_gpu_time_used += KGSL_TIMEOUT_HANG_DETECT;
+ 			KGSL_FT_INFO(device,
+ 			"Proc %s used GPU Time %d ms on timestamp 0x%X\n",
+ 			curr_context->pid_name, curr_context->ib_gpu_time_used,
+diff --git a/drivers/gpu/msm/kgsl.c b/drivers/gpu/msm/kgsl.c
+index 5e9f14d..f161a38 100755
+--- a/drivers/gpu/msm/kgsl.c
++++ b/drivers/gpu/msm/kgsl.c
+@@ -83,7 +83,7 @@ static struct {
+  * kgsl_hang_check() - Check for GPU hang
+  * data: KGSL device structure
+  *
+- * This function is called every KGSL_TIMEOUT_PART time when
++ * This function is called every KGSL_TIMEOUT_HANG_DETECT time when
+  * GPU is active to check for hang. If a hang is detected we
+  * trigger fault tolerance.
+  */
+@@ -102,7 +102,7 @@ void kgsl_hang_check(struct work_struct *work)
+ 			adreno_dump_and_exec_ft(device);
+ 
+ 		mod_timer(&device->hang_timer,
+-			(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++			(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 	}
+ 
+ 	mutex_unlock(&device->mutex);
+@@ -115,7 +115,7 @@ void kgsl_hang_check(struct work_struct *work)
+  * This function is called when hang timer expires, in this
+  * function we check if GPU is in active state and queue the
+  * work on device workqueue to check for the hang. We restart
+- * the timer after KGSL_TIMEOUT_PART time.
++ * the timer after KGSL_TIMEOUT_HANG_DETECT time.
+  */
+ void hang_timer(unsigned long data)
+ {
+diff --git a/drivers/gpu/msm/kgsl_device.h b/drivers/gpu/msm/kgsl_device.h
+index 4177581..6013e7d 100644
+--- a/drivers/gpu/msm/kgsl_device.h
++++ b/drivers/gpu/msm/kgsl_device.h
+@@ -28,6 +28,7 @@
+ #define KGSL_TIMEOUT_DEFAULT        0xFFFFFFFF
+ #define KGSL_TIMEOUT_PART           50 /* 50 msec */
+ #define KGSL_TIMEOUT_LONG_IB_DETECTION  2000 /* 2 sec*/
++#define KGSL_TIMEOUT_HANG_DETECT	200	/* 200 msec */
+ 
+ #define FIRST_TIMEOUT (HZ / 2)
+ 
+diff --git a/drivers/gpu/msm/kgsl_pwrctrl.c b/drivers/gpu/msm/kgsl_pwrctrl.c
+index cb7661f..faad5785 100644
+--- a/drivers/gpu/msm/kgsl_pwrctrl.c
++++ b/drivers/gpu/msm/kgsl_pwrctrl.c
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2010-2012,2014 The Linux Foundation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License version 2 and
+@@ -1274,7 +1274,7 @@ int kgsl_pwrctrl_wake(struct kgsl_device *device)
+ 		mod_timer(&device->idle_timer,
+ 				jiffies + device->pwrctrl.interval_timeout);
+ 		mod_timer(&device->hang_timer,
+-			(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++			(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 		pm_qos_update_request(&device->pm_qos_req_dma,
+ 					GPU_SWFI_LATENCY);
+ 	case KGSL_STATE_ACTIVE:
+
+From ecab17be93f5c130f7ea19e860dce7472d297b0d Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Tue, 3 Jun 2014 12:27:06 +0000
+Subject: [PATCH 04/10] futex-prevent-requeue-pi-on-same-futex.patch futex:
+ Forbid uaddr == uaddr2 in futex_requeue(..., requeue_pi=1)
+
+If uaddr == uaddr2, then we have broken the rule of only requeueing from
+a non-pi futex to a pi futex with this call.  If we attempt this, then
+dangling pointers may be left for rt_waiter resulting in an exploitable
+condition.
+
+This change brings futex_requeue() in line with futex_wait_requeue_pi()
+which performs the same check as per commit 6f7b0a2a5c0f ("futex: Forbid
+uaddr == uaddr2 in futex_wait_requeue_pi()")
+
+[ tglx: Compare the resulting keys as well, as uaddrs might be
+  	different depending on the mapping ]
+
+Fixes CVE-2014-3153.
+
+Reported-by: Pinkie Pie
+Signed-off-by: Will Drewry <wad@chromium.org>
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Cc: stable@vger.kernel.org
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Reviewed-by: Darren Hart <dvhart@linux.intel.com>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Change-Id: I9ee5c8a87cc43c7b1e1dc2796949e7c20c74ddf4
+Git-commit: e9c243a5a6de0be8e584c604d353412584b592f8
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+Signed-off-by: Divya Sharma <c_shard@codeaurora.org>
+---
+ kernel/futex.c | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/kernel/futex.c b/kernel/futex.c
+index e2b0fb9..9536918 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -1256,6 +1256,13 @@ static int futex_requeue(u32 __user *uaddr1, unsigned int flags,
+ 
+ 	if (requeue_pi) {
+ 		/*
++		 * Requeue PI only works on two distinct uaddrs. This
++		 * check is only valid for private futexes. See below.
++		 */
++		if (uaddr1 == uaddr2)
++			return -EINVAL;
++
++		/*
+ 		 * requeue_pi requires a pi_state, try to allocate it now
+ 		 * without any locks in case it fails.
+ 		 */
+@@ -1293,6 +1300,15 @@ static int futex_requeue(u32 __user *uaddr1, unsigned int flags,
+ 	if (unlikely(ret != 0))
+ 		goto out_put_key1;
+ 
++	/*
++	 * The check above which compares uaddrs is not sufficient for
++	 * shared futexes. We need to compare the keys:
++	 */
++	if (requeue_pi && match_futex(&key1, &key2)) {
++		ret = -EINVAL;
++		goto out_put_keys;
++	}
++
+ 	hb1 = hash_futex(&key1);
+ 	hb2 = hash_futex(&key2);
+ 
+@@ -2308,6 +2324,15 @@ static int futex_wait_requeue_pi(u32 __user *uaddr, unsigned int flags,
+ 	if (ret)
+ 		goto out_key2;
+ 
++	/*
++	 * The check above which compares uaddrs is not sufficient for
++	 * shared futexes. We need to compare the keys:
++	 */
++	if (match_futex(&q.key, &key2)) {
++		ret = -EINVAL;
++		goto out_put_keys;
++	}
++
+ 	/* Queue the futex_q, drop the hb lock, wait for wakeup. */
+ 	futex_wait_queue_me(hb, &q, to);
+ 
+
+From d21fa7b2c97dd355366abe7f648b80bad8672e60 Mon Sep 17 00:00:00 2001
+From: "Wang, Xiaoming" <xiaoming.wang@intel.com>
+Date: Mon, 14 Apr 2014 12:30:45 -0400
+Subject: [PATCH 05/10] net: ipv4: current group_info should be put after
+ using.
+
+Plug a group_info refcount leak in ping_init.
+group_info is only needed during initialization and
+the code failed to release the reference on exit.
+While here move grabbing the reference to a place
+where it is actually needed.
+
+Change-Id: I38d476f49e7ae300bc1168bc4b2c1b67274a51ca
+Signed-off-by: Chuansheng Liu <chuansheng.liu@intel.com>
+Signed-off-by: Zhang Dongxing <dongxing.zhang@intel.com>
+Signed-off-by: xiaoming wang <xiaoming.wang@intel.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Git-commit:b04c46190219a4f845e46a459e3102137b7f6cac
+Git-repo: https://git.kernel.org/cgit/linux/kernel/git/davem/net.git
+Signed-off-by: Divya Sharma <c_shard@codeaurora.org>
+[rsiddoji@codeaurora.org: resolve trivial merge conflicts]
+Signed-off-by: Ravi Kumar S <rsiddoji@codeaurora.org>
+---
+ net/ipv4/ping.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/net/ipv4/ping.c b/net/ipv4/ping.c
+index 6241358..46b8ad8 100644
+--- a/net/ipv4/ping.c
++++ b/net/ipv4/ping.c
+@@ -248,26 +248,33 @@ int ping_init_sock(struct sock *sk)
+ 	struct net *net = sock_net(sk);
+ 	gid_t group = current_egid();
+ 	gid_t range[2];
+-	struct group_info *group_info = get_current_groups();
+-	int i, j, count = group_info->ngroups;
++	struct group_info *group_info;
++	int i, j, count  ;
++        int ret = 0;
+ 
+ 	inet_get_ping_group_range_net(net, range, range+1);
+ 	if (range[0] <= group && group <= range[1])
+ 		return 0;
+ 
++	group_info = get_current_groups();
++	count = group_info->ngroups;
+ 	for (i = 0; i < group_info->nblocks; i++) {
+ 		int cp_count = min_t(int, NGROUPS_PER_BLOCK, count);
+ 
+ 		for (j = 0; j < cp_count; j++) {
+ 			group = group_info->blocks[i][j];
+ 			if (range[0] <= group && group <= range[1])
+-				return 0;
++				goto out_release_group;
+ 		}
+ 
+ 		count -= cp_count;
+ 	}
+ 
+-	return -EACCES;
++	ret = -EACCES;
++
++out_release_group:
++	put_group_info(group_info);
++	return ret;
+ }
+ EXPORT_SYMBOL_GPL(ping_init_sock);
+ 
+
+From 407ebcc000bec3a9aa26f65707ae314b15e8e23e Mon Sep 17 00:00:00 2001
+From: Gaurav Gagrani <ggagrani@codeaurora.org>
+Date: Tue, 8 Jul 2014 13:45:58 +0530
+Subject: [PATCH 06/10] msm: kgsl: Don't hold the refernce to the process
+ private in kgsl create context
+
+There is a possible race condition for dev_priv where the kgsl_release
+is called, while adreno_ft_detect has reference for the same context.
+This change will avoid to use dev_priv in context destroy, which is
+already freed in kgsl_release.
+
+CRs-Fixed: 688521
+Change-Id: I0411873b605c4e264057eaa3f79c6439004c427c
+Signed-off-by: Gaurav Gagrani <ggagrani@codeaurora.org>
+---
+ drivers/gpu/msm/kgsl.c | 14 +-------------
+ 1 file changed, 1 insertion(+), 13 deletions(-)
+
+diff --git a/drivers/gpu/msm/kgsl.c b/drivers/gpu/msm/kgsl.c
+index 5e9f14d..848ba7b 100755
+--- a/drivers/gpu/msm/kgsl.c
++++ b/drivers/gpu/msm/kgsl.c
+@@ -549,20 +549,9 @@ kgsl_create_context(struct kgsl_device_private *dev_priv)
+ 	}
+ 
+ 	kref_init(&context->refcount);
+-	/*
+-	 * Get a refernce to the process private so its not destroyed, until
+-	 * the context is destroyed. This will also prevent the pagetable
+-	 * from being destroyed
+-	 */
+-	if (!kgsl_process_private_get(dev_priv->process_priv)) {
+-		ret = -EBADF;
+-		goto fail_free_id;
+-	}
+-
+ 	context->dev_priv = dev_priv;
+ 	ret = kgsl_sync_timeline_create(context);
+ 	if (ret) {
+-		kgsl_process_private_put(dev_priv->process_priv);
+ 		goto fail_free_id;
+ 	}
+ 
+@@ -632,7 +621,7 @@ kgsl_context_detach(struct kgsl_context *context)
+ 	context->id = KGSL_CONTEXT_INVALID;
+ 	idr_remove(&device->context_idr, id);
+ 	write_unlock(&device->context_lock);
+-
++	context->dev_priv = NULL;
+ 	kgsl_context_put(context);
+ }
+ 
+@@ -642,7 +631,6 @@ kgsl_context_destroy(struct kref *kref)
+ 	struct kgsl_context *context = container_of(kref, struct kgsl_context,
+ 						    refcount);
+ 	kgsl_sync_timeline_destroy(context);
+-	kgsl_process_private_put(context->dev_priv->process_priv);
+ 	kfree(context);
+ }
+ 
+
+From f49114d75a2ce4b7143f8b555491290447c66519 Mon Sep 17 00:00:00 2001
+From: Ashok Raj Deenadayalan <adeena@codeaurora.org>
+Date: Fri, 11 Jul 2014 13:42:01 +0530
+Subject: [PATCH 07/10] msm: camera: Propogate vpe subdev init error
+
+Propogate vpe subdev init error so that we dont end up
+in NULL pointer dereference.
+
+CRs-Fixed: 637459
+Change-Id: I4582a8a673576c525ad3b59a3c6a8e983a1d0941
+Signed-off-by: Ashok Raj Deenadayalan <adeena@codeaurora.org>
+---
+ drivers/media/video/msm/msm_vpe.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/video/msm/msm_vpe.c b/drivers/media/video/msm/msm_vpe.c
+index ed04949..a747211 100644
+--- a/drivers/media/video/msm/msm_vpe.c
++++ b/drivers/media/video/msm/msm_vpe.c
+@@ -899,7 +899,7 @@ static long msm_vpe_subdev_ioctl(struct v4l2_subdev *sd,
+ 	mctl = v4l2_get_subdev_hostdata(sd);
+ 	switch (cmd) {
+ 	case VIDIOC_MSM_VPE_INIT: {
+-		msm_vpe_subdev_init(sd);
++		rc = msm_vpe_subdev_init(sd);
+ 		break;
+ 		}
+ 
+
+From 6a3aa61a68d662cce468af1ed326fddf54109ad1 Mon Sep 17 00:00:00 2001
+From: Peter Hurley <peter@hurleysoftware.com>
+Date: Tue, 13 May 2014 14:36:46 -0700
+Subject: [PATCH 08/10] n_tty: Fix n_tty_write crash when echoing in raw mode
+
+The tty atomic_write_lock does not provide an exclusion guarantee for
+the tty driver if the termios settings are LECHO & !OPOST. And since
+it is unexpected and not allowed to call TTY buffer helpers like
+tty_insert_flip_string concurrently, this may lead to crashes when
+concurrect writers call pty_write. In that case the following two
+writers:
+* the ECHOing from a workqueue and
+* pty_write from the process
+race and can overflow the corresponding TTY buffer like follows.
+
+If we look into tty_insert_flip_string_fixed_flag, there is:
+  int space = __tty_buffer_request_room(port, goal, flags);
+  struct tty_buffer *tb = port->buf.tail;
+  ...
+  memcpy(char_buf_ptr(tb, tb->used), chars, space);
+  ...
+  tb->used += space;
+
+so the race of the two can result in something like this:
+          A                             B
+   __tty_buffer_request_room
+                                  __tty_buffer_request_room
+   memcpy(buf(tb->used), ...)
+   tb->used += space;
+                                 memcpy(buf(tb->used), ...) ->BOOM
+
+B's memcpy is past the tty_buffer due to the previous A's tb->used
+increment.
+
+Since the N_TTY line discipline input processing can output
+concurrently with a tty write, obtain the N_TTY ldisc output_lock to
+serialize echo output with normal tty writes. This ensures the tty
+buffer helper tty_insert_flip_string is not called concurrently and
+everything is fine.
+
+Note that this is nicely reproducible by an ordinary user using
+forkpty and some setup around that (raw termios + ECHO). And it is
+present in kernels at least after commit
+d945cb9cce20ac7143c2de8d88b187f62db99bdc (pty: Rework the pty layer to
+use the normal buffering logic) in 2.6.31-rc3.
+
+js: add more info to the commit log
+js: switch to bool
+js: lock unconditionally
+js: lock only the tty->ops->write call
+
+Signed-off-by: Peter Hurley <peter@hurleysoftware.com>
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Change-Id: I9e235db6ec2bb950f26bd8a23f6145dab5dc0a15
+Git-commit: 4291086b1f081b869c6d79e5b7441633dc3ace00
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+Signed-off-by: Avijit Kanti Das <avijitnsec@codeaurora.org>
+[rsiddoji@codeaurora.org: resolve trivial merge conflicts]
+Signed-off-by: Ravi Kumar S <rsiddoji@codeaurora.org>
+---
+ drivers/tty/n_tty.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/tty/n_tty.c b/drivers/tty/n_tty.c
+index 94b6eda..e0af885 100644
+--- a/drivers/tty/n_tty.c
++++ b/drivers/tty/n_tty.c
+@@ -1986,8 +1986,11 @@ static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
+ 			if (tty->ops->flush_chars)
+ 				tty->ops->flush_chars(tty);
+ 		} else {
++
+ 			while (nr > 0) {
++				mutex_lock(&tty->output_lock);
+ 				c = tty->ops->write(tty, b, nr);
++				mutex_unlock(&tty->output_lock);
+ 				if (c < 0) {
+ 					retval = c;
+ 					goto break_out;
+
+From 7eb7890163fd90ec8c2abace8bd9ffc61ce573c4 Mon Sep 17 00:00:00 2001
+From: Subash Abhinov Kasiviswanathan <subashab@codeaurora.org>
+Date: Mon, 2 Jun 2014 16:14:43 -0600
+Subject: [PATCH 09/10] msm_bam_rmnet: Fix potential memory corruption
+
+Usage of legacy string manipulation function sprintf could lead to
+memory corruption as the number of bytes to be written to the
+destination is not bounded. Replace sprintf with snprintf where the
+number of bytes to be written is explicitly specified.
+
+CRs-fixed: 672202
+Change-Id: Iab7516ad0e2540eb619fe96e26a3516c7adf86cc
+Signed-off-by: Subash Abhinov Kasiviswanathan <subashab@codeaurora.org>
+---
+ drivers/net/ethernet/msm/msm_rmnet_bam.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/msm/msm_rmnet_bam.c b/drivers/net/ethernet/msm/msm_rmnet_bam.c
+index 83f486c..0966a4a 100644
+--- a/drivers/net/ethernet/msm/msm_rmnet_bam.c
++++ b/drivers/net/ethernet/msm/msm_rmnet_bam.c
+@@ -111,7 +111,8 @@ static ssize_t timeout_suspend_show(struct device *d,
+ 				    struct device_attribute *attr,
+ 				    char *buf)
+ {
+-	return sprintf(buf, "%lu\n", (unsigned long) timeout_suspend_us);
++	return snprintf(buf, PAGE_SIZE, "%lu\n",
++			(unsigned long) timeout_suspend_us);
+ }
+ 
+ static DEVICE_ATTR(timeout_suspend, 0664, timeout_suspend_show,
+@@ -170,7 +171,7 @@ static ssize_t wakeups_xmit_show(struct device *d,
+ 				 char *buf)
+ {
+ 	struct rmnet_private *p = netdev_priv(to_net_dev(d));
+-	return sprintf(buf, "%lu\n", p->wakeups_xmit);
++	return snprintf(buf, PAGE_SIZE, "%lu\n", p->wakeups_xmit);
+ }
+ 
+ DEVICE_ATTR(wakeups_xmit, 0444, wakeups_xmit_show, NULL);
+@@ -179,7 +180,7 @@ static ssize_t wakeups_rcv_show(struct device *d, struct device_attribute *attr,
+ 				char *buf)
+ {
+ 	struct rmnet_private *p = netdev_priv(to_net_dev(d));
+-	return sprintf(buf, "%lu\n", p->wakeups_rcv);
++	return snprintf(buf, PAGE_SIZE, "%lu\n", p->wakeups_rcv);
+ }
+ 
+ DEVICE_ATTR(wakeups_rcv, 0444, wakeups_rcv_show, NULL);
+@@ -203,7 +204,7 @@ static ssize_t timeout_show(struct device *d, struct device_attribute *attr,
+ {
+ 	struct rmnet_private *p = netdev_priv(to_net_dev(d));
+ 	p = netdev_priv(to_net_dev(d));
+-	return sprintf(buf, "%lu\n", timeout_us);
++	return snprintf(buf, PAGE_SIZE, "%lu\n", timeout_us);
+ }
+ 
+ DEVICE_ATTR(timeout, 0664, timeout_show, timeout_store);
+
+From 803da50dc655d9bbd544a3afb9e9ad11b813065f Mon Sep 17 00:00:00 2001
+From: Avijit Kanti Das <avijitnsec@codeaurora.org>
+Date: Wed, 14 May 2014 11:03:56 -0700
+Subject: [PATCH 10/10] net: Zeroing the structure ethtool_wolinfo in
+ ethtool_get_wol()
+
+memset() the structure ethtool_wolinfo that has padded bytes
+but the padded bytes have not been zeroed out.
+
+Change-Id: If3fd2d872a1b1ab9521d937b86a29fc468a8bbfe
+Signed-off-by: Avijit Kanti Das <avijitnsec@codeaurora.org>
+---
+ net/core/ethtool.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/net/core/ethtool.c b/net/core/ethtool.c
+index 6d6d7d2..452fa869 100644
+--- a/net/core/ethtool.c
++++ b/net/core/ethtool.c
+@@ -691,11 +691,13 @@ static int ethtool_reset(struct net_device *dev, char __user *useraddr)
+ 
+ static int ethtool_get_wol(struct net_device *dev, char __user *useraddr)
+ {
+-	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
++	struct ethtool_wolinfo wol;
+ 
+ 	if (!dev->ethtool_ops->get_wol)
+ 		return -EOPNOTSUPP;
+ 
++	memset(&wol, 0, sizeof(struct ethtool_wolinfo));
++	wol.cmd = ETHTOOL_GWOL;
+ 	dev->ethtool_ops->get_wol(dev, &wol);
+ 
+ 	if (copy_to_user(useraddr, &wol, sizeof(wol)))

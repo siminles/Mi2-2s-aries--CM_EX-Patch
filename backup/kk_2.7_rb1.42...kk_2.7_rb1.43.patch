@@ -1,0 +1,1725 @@
+From 15cf4d253959f5aa758a2f366cb424ed51a9fb1a Mon Sep 17 00:00:00 2001
+From: Shantanu Jain <shjain@codeaurora.org>
+Date: Wed, 2 Jul 2014 23:54:17 +0530
+Subject: [PATCH 01/11] input: cyttsp-i2c-qc: change code path for
+ cyttsp_xy_handler
+
+cyttsp_xy_handler is the function which sends the coordinates
+to input framework. In the starting of the function it checks
+the mode of the controller. But while going to suspend,
+this check is not required, since the controller will
+eventually goes to power collapse. So this change will
+skip the check if it is going to suspend.
+
+Change-Id: If66a8f0bb55fad42a375810ee75876ac43e34511
+Signed-off-by: Shantanu Jain <shjain@codeaurora.org>
+---
+ drivers/input/touchscreen/cyttsp-i2c-qc.c | 67 ++++++++++++++++++-------------
+ 1 file changed, 38 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/input/touchscreen/cyttsp-i2c-qc.c b/drivers/input/touchscreen/cyttsp-i2c-qc.c
+index 211b0aa..d86f6ec 100644
+--- a/drivers/input/touchscreen/cyttsp-i2c-qc.c
++++ b/drivers/input/touchscreen/cyttsp-i2c-qc.c
+@@ -1031,39 +1031,48 @@ static void cyttsp_xy_handler(struct cyttsp *ts, bool is_ready_to_suspend)
+ 			"Spurious err opmode (tt_mode=%02X hst_mode=%02X)\n", \
+ 			g_xy_data.tt_mode, g_xy_data.hst_mode);
+ 		cyttsp_debug("Reset TTSP Device; Terminating active tracks\n");
+-		/* terminate all active tracks */
+-		cur_tch = CY_NTCH;
+-		/* reset TTSP part and take it back out of Bootloader mode */
+-		/* reset TTSP Device back to bootloader mode */
+-		host_reg = CY_SOFT_RESET_MODE;
+-		retval = i2c_smbus_write_i2c_block_data(ts->client, CY_REG_BASE,
+-			sizeof(host_reg), &host_reg);
+-		/* wait for TTSP Device to complete reset back to bootloader */
+-		tries = 0;
+-		do {
+-			usleep_range(1000, 1000);
+-			cyttsp_putbl(ts, 1, false, false, false);
+-		} while (g_bl_data.bl_status != 0x10 &&
+-			g_bl_data.bl_status != 0x11 &&
+-			tries++ < 100);
+-		retval = cyttsp_putbl(ts, 1, true, true, true);
+-		/* switch back to operational mode */
+-		/* take TTSP device out of bootloader mode;
+-		 * switch back to TrueTouch operational mode */
+-		if (!(retval < CY_OK)) {
+-			int tries;
++
++		if (!is_ready_to_suspend) {
++			/* terminate all active tracks */
++			cur_tch = CY_NTCH;
++			/* reset TTSP part and take it back out of Bootloader
++			mode */
++			/* reset TTSP Device back to bootloader mode */
++			host_reg = CY_SOFT_RESET_MODE;
+ 			retval = i2c_smbus_write_i2c_block_data(ts->client,
+-				CY_REG_BASE,
+-				sizeof(bl_cmd), bl_cmd);
+-			/* wait for TTSP Device to complete
+-			 * switch to Operational mode */
++					CY_REG_BASE,
++					sizeof(host_reg), &host_reg);
++			/* wait for TTSP Device to complete reset back to
++			bootloader */
+ 			tries = 0;
+ 			do {
+-				msleep(100);
+-				cyttsp_putbl(ts, 2, false, false, false);
+-			} while (GET_BOOTLOADERMODE(g_bl_data.bl_status) &&
++				usleep_range(1000, 1000);
++				cyttsp_putbl(ts, 1, false, false, false);
++			} while (g_bl_data.bl_status != 0x10 &&
++				g_bl_data.bl_status != 0x11 &&
+ 				tries++ < 100);
+-			cyttsp_putbl(ts, 2, true, false, false);
++			retval = cyttsp_putbl(ts, 1, true, true, true);
++			/* switch back to operational mode */
++			/* take TTSP device out of bootloader mode;
++			 * switch back to TrueTouch operational mode */
++			if (!(retval < CY_OK)) {
++				int tries;
++				retval = i2c_smbus_write_i2c_block_data(
++					ts->client,
++					CY_REG_BASE,
++					sizeof(bl_cmd), bl_cmd);
++				/* wait for TTSP Device to complete
++				 * switch to Operational mode */
++				tries = 0;
++				do {
++					msleep(100);
++					cyttsp_putbl(ts, 2, false, false,
++							false);
++				} while (GET_BOOTLOADERMODE(
++					g_bl_data.bl_status) &&
++					tries++ < 100);
++				cyttsp_putbl(ts, 2, true, false, false);
++			}
+ 		}
+ 		goto exit_xy_handler;
+ 	} else {
+
+From 9fb56c31533782d93646370de07cb42e73776d0c Mon Sep 17 00:00:00 2001
+From: Praveen Chavan <pchavan@codeaurora.org>
+Date: Mon, 28 Oct 2013 00:44:14 -0700
+Subject: [PATCH 02/11] msm: vidc: cache-flush encoder output buffers after
+ alloc
+
+Flush output buffers explcitly during registering. This ensures
+any pending CPU writes (i.e meset to 0 after allocation) are
+committed right away, or else this may get flushed _after_
+hardware has written the bitstream.
+
+Change-Id: I958466011e7d96c7b5e2691403c8386309997429
+Signed-off-by: Praveen Chavan <pchavan@codeaurora.org>
+Signed-off-by: c_sridur <sridur@codeaurora.org>
+---
+ drivers/video/msm/vidc/common/enc/venc_internal.c | 39 ++++++++++++++++++++++-
+ 1 file changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/video/msm/vidc/common/enc/venc_internal.c b/drivers/video/msm/vidc/common/enc/venc_internal.c
+index ddad23a..54e14fb 100644
+--- a/drivers/video/msm/vidc/common/enc/venc_internal.c
++++ b/drivers/video/msm/vidc/common/enc/venc_internal.c
+@@ -1620,7 +1620,12 @@ u32 vid_enc_set_buffer(struct video_client_ctx *client_ctx,
+ 	enum vcd_buffer_type vcd_buffer_t = VCD_BUFFER_INPUT;
+ 	enum buffer_dir dir_buffer = BUFFER_TYPE_INPUT;
+ 	u32 vcd_status = VCD_ERR_FAIL;
+-	unsigned long kernel_vaddr, length = 0;
++	unsigned long kernel_vaddr, length, user_vaddr, phy_addr = 0;
++	int pmem_fd = 0;
++	struct ion_handle *buff_handle = NULL;
++	u32 ion_flag = 0;
++	struct file *file = NULL;
++	s32 buffer_index = 0;
+ 
+ 	if (!client_ctx || !buffer_info)
+ 		return false;
+@@ -1642,6 +1647,38 @@ u32 vid_enc_set_buffer(struct video_client_ctx *client_ctx,
+ 		return false;
+ 	}
+ 
++	/*
++	* Flush output buffers explcitly once, during registration. This ensures
++	* any pending CPU writes (if cleared after allocation) are
++	* committed right away, or else this may get flushed _after_
++	* the hardware has written bitstream. rare bug, but can happen !
++	*/
++	if (buffer == VEN_BUFFER_TYPE_OUTPUT) {
++		user_vaddr = (unsigned long)buffer_info->pbuffer;
++		if (!vidc_lookup_addr_table(client_ctx, BUFFER_TYPE_OUTPUT,
++					true, &user_vaddr, &kernel_vaddr,
++					&phy_addr, &pmem_fd, &file,
++					&buffer_index)) {
++			ERR("%s(): vidc_lookup_addr_table failed\n",
++			__func__);
++			return false;
++		}
++
++		ion_flag = vidc_get_fd_info(client_ctx, BUFFER_TYPE_OUTPUT,
++				buffer_info->fd, kernel_vaddr, buffer_index,
++				&buff_handle);
++
++		if (ion_flag == ION_FLAG_CACHED && buff_handle) {
++			msm_ion_do_cache_op(
++					client_ctx->user_ion_client,
++					buff_handle,
++					NULL,
++					(unsigned long) length,
++					ION_IOC_INV_CACHES);
++		}
++	}
++
++
+ 	vcd_status = vcd_set_buffer(client_ctx->vcd_handle,
+ 				    vcd_buffer_t, (u8 *) kernel_vaddr,
+ 				    buffer_info->sz);
+
+From 588af249288c22edddab9db5430a9306c18fa332 Mon Sep 17 00:00:00 2001
+From: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Date: Thu, 14 Nov 2013 14:31:57 -0800
+Subject: [PATCH 03/11] seq_file: remove "%n" usage from seq_file users
+
+All seq_printf() users are using "%n" for calculating padding size,
+convert them to use seq_setwidth() / seq_pad() pair.
+
+Signed-off-by: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Cc: Joe Perches <joe@perches.com>
+Cc: David Miller <davem@davemloft.net>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Git-commit: 652586df95e5d76b37d07a11839126dcfede1621
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+[rsiddoji@codeaurora.org: Resolve merge conflicts with ipv4/6 ping
+ changes in upstream]
+CRs-fixed: 665291
+Change-Id: Ia0416c9dbe3d80ff35f24f9c93c3543d1200a327
+Signed-off-by: Ravi Kumar <rsiddoji@codeaurora.org>
+---
+ fs/proc/consoles.c   | 10 ++++------
+ fs/proc/nommu.c      | 12 +++++-------
+ fs/proc/task_mmu.c   | 20 ++++++--------------
+ fs/proc/task_nommu.c | 19 ++++++-------------
+ net/ipv4/fib_trie.c  | 13 +++++++------
+ net/ipv4/ping.c      | 15 +++++++--------
+ net/ipv4/tcp_ipv4.c  | 34 ++++++++++++++++------------------
+ net/ipv4/udp.c       | 15 +++++++--------
+ net/phonet/socket.c  | 27 +++++++++++++--------------
+ net/sctp/objcnt.c    |  9 +++++----
+ 10 files changed, 76 insertions(+), 98 deletions(-)
+
+diff --git a/fs/proc/consoles.c b/fs/proc/consoles.c
+index b701eaa..51942d5 100644
+--- a/fs/proc/consoles.c
++++ b/fs/proc/consoles.c
+@@ -29,7 +29,6 @@ static int show_console_dev(struct seq_file *m, void *v)
+ 	char flags[ARRAY_SIZE(con_flags) + 1];
+ 	struct console *con = v;
+ 	unsigned int a;
+-	int len;
+ 	dev_t dev = 0;
+ 
+ 	if (con->device) {
+@@ -47,11 +46,10 @@ static int show_console_dev(struct seq_file *m, void *v)
+ 			con_flags[a].name : ' ';
+ 	flags[a] = 0;
+ 
+-	seq_printf(m, "%s%d%n", con->name, con->index, &len);
+-	len = 21 - len;
+-	if (len < 1)
+-		len = 1;
+-	seq_printf(m, "%*c%c%c%c (%s)", len, ' ', con->read ? 'R' : '-',
++	seq_setwidth(m, 21 - 1);
++	seq_printf(m, "%s%d", con->name, con->index);
++	seq_pad(m, ' ');
++	seq_printf(m, "%c%c%c (%s)", con->read ? 'R' : '-',
+ 			con->write ? 'W' : '-', con->unblank ? 'U' : '-',
+ 			flags);
+ 	if (dev)
+diff --git a/fs/proc/nommu.c b/fs/proc/nommu.c
+index b1822dd..501ae3a 100644
+--- a/fs/proc/nommu.c
++++ b/fs/proc/nommu.c
+@@ -39,7 +39,7 @@ static int nommu_region_show(struct seq_file *m, struct vm_region *region)
+ 	unsigned long ino = 0;
+ 	struct file *file;
+ 	dev_t dev = 0;
+-	int flags, len;
++	int flags;
+ 
+ 	flags = region->vm_flags;
+ 	file = region->vm_file;
+@@ -50,8 +50,9 @@ static int nommu_region_show(struct seq_file *m, struct vm_region *region)
+ 		ino = inode->i_ino;
+ 	}
+ 
++	seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
+ 	seq_printf(m,
+-		   "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu %n",
++		   "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu ",
+ 		   region->vm_start,
+ 		   region->vm_end,
+ 		   flags & VM_READ ? 'r' : '-',
+@@ -59,13 +60,10 @@ static int nommu_region_show(struct seq_file *m, struct vm_region *region)
+ 		   flags & VM_EXEC ? 'x' : '-',
+ 		   flags & VM_MAYSHARE ? flags & VM_SHARED ? 'S' : 's' : 'p',
+ 		   ((loff_t)region->vm_pgoff) << PAGE_SHIFT,
+-		   MAJOR(dev), MINOR(dev), ino, &len);
++		   MAJOR(dev), MINOR(dev), ino);
+ 
+ 	if (file) {
+-		len = 25 + sizeof(void *) * 6 - len;
+-		if (len < 1)
+-			len = 1;
+-		seq_printf(m, "%*c", len, ' ');
++		seq_pad(m, ' ');
+ 		seq_path(m, &file->f_path, "");
+ 	}
+ 
+diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
+index 1030a71..2fb663a 100644
+--- a/fs/proc/task_mmu.c
++++ b/fs/proc/task_mmu.c
+@@ -82,14 +82,6 @@ unsigned long task_statm(struct mm_struct *mm,
+ 	return mm->total_vm;
+ }
+ 
+-static void pad_len_spaces(struct seq_file *m, int len)
+-{
+-	len = 25 + sizeof(void*) * 6 - len;
+-	if (len < 1)
+-		len = 1;
+-	seq_printf(m, "%*c", len, ' ');
+-}
+-
+ static void vma_stop(struct proc_maps_private *priv, struct vm_area_struct *vma)
+ {
+ 	if (vma && vma != priv->tail_vma) {
+@@ -221,7 +213,6 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
+ 	unsigned long long pgoff = 0;
+ 	unsigned long start, end;
+ 	dev_t dev = 0;
+-	int len;
+ 	const char *name = NULL;
+ 
+ 	if (file) {
+@@ -239,7 +230,8 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
+ 	if (stack_guard_page_end(vma, end))
+ 		end -= PAGE_SIZE;
+ 
+-	seq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu %n",
++	seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
++	seq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu ",
+ 			start,
+ 			end,
+ 			flags & VM_READ ? 'r' : '-',
+@@ -247,14 +239,14 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
+ 			flags & VM_EXEC ? 'x' : '-',
+ 			flags & VM_MAYSHARE ? 's' : 'p',
+ 			pgoff,
+-			MAJOR(dev), MINOR(dev), ino, &len);
++			MAJOR(dev), MINOR(dev), ino);
+ 
+ 	/*
+ 	 * Print the dentry name for named mappings, and a
+ 	 * special [heap] marker for the heap:
+ 	 */
+ 	if (file) {
+-		pad_len_spaces(m, len);
++		seq_pad(m, ' ');
+ 		seq_path(m, &file->f_path, "\n");
+ 		goto done;
+ 	}
+@@ -286,7 +278,7 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
+ 				name = "[stack]";
+ 			} else {
+ 				/* Thread stack in /proc/PID/maps */
+-				pad_len_spaces(m, len);
++				seq_pad(m, ' ');
+ 				seq_printf(m, "[stack:%d]", tid);
+ 			}
+ 		}
+@@ -294,7 +286,7 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
+ 
+ done:
+ 	if (name) {
+-		pad_len_spaces(m, len);
++		seq_pad(m, ' ');
+ 		seq_puts(m, name);
+ 	}
+ 	seq_putc(m, '\n');
+diff --git a/fs/proc/task_nommu.c b/fs/proc/task_nommu.c
+index 74fe164..1d2b545 100644
+--- a/fs/proc/task_nommu.c
++++ b/fs/proc/task_nommu.c
+@@ -123,14 +123,6 @@ unsigned long task_statm(struct mm_struct *mm,
+ 	return size;
+ }
+ 
+-static void pad_len_spaces(struct seq_file *m, int len)
+-{
+-	len = 25 + sizeof(void*) * 6 - len;
+-	if (len < 1)
+-		len = 1;
+-	seq_printf(m, "%*c", len, ' ');
+-}
+-
+ /*
+  * display a single VMA to a sequenced file
+  */
+@@ -142,7 +134,7 @@ static int nommu_vma_show(struct seq_file *m, struct vm_area_struct *vma,
+ 	unsigned long ino = 0;
+ 	struct file *file;
+ 	dev_t dev = 0;
+-	int flags, len;
++	int flags;
+ 	unsigned long long pgoff = 0;
+ 
+ 	flags = vma->vm_flags;
+@@ -155,8 +147,9 @@ static int nommu_vma_show(struct seq_file *m, struct vm_area_struct *vma,
+ 		pgoff = (loff_t)vma->vm_pgoff << PAGE_SHIFT;
+ 	}
+ 
++	seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
+ 	seq_printf(m,
+-		   "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu %n",
++		   "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu ",
+ 		   vma->vm_start,
+ 		   vma->vm_end,
+ 		   flags & VM_READ ? 'r' : '-',
+@@ -164,16 +157,16 @@ static int nommu_vma_show(struct seq_file *m, struct vm_area_struct *vma,
+ 		   flags & VM_EXEC ? 'x' : '-',
+ 		   flags & VM_MAYSHARE ? flags & VM_SHARED ? 'S' : 's' : 'p',
+ 		   pgoff,
+-		   MAJOR(dev), MINOR(dev), ino, &len);
++		   MAJOR(dev), MINOR(dev), ino);
+ 
+ 	if (file) {
+-		pad_len_spaces(m, len);
++		seq_pad(m, ' ');
+ 		seq_path(m, &file->f_path, "");
+ 	} else if (mm) {
+ 		pid_t tid = vm_is_stack(priv->task, vma, is_pid);
+ 
+ 		if (tid != 0) {
+-			pad_len_spaces(m, len);
++			seq_pad(m, ' ');
+ 			/*
+ 			 * Thread stack in /proc/PID/task/TID/maps or
+ 			 * the main process stack.
+diff --git a/net/ipv4/fib_trie.c b/net/ipv4/fib_trie.c
+index cada6a7..348df4d 100644
+--- a/net/ipv4/fib_trie.c
++++ b/net/ipv4/fib_trie.c
+@@ -2550,16 +2550,17 @@ static int fib_route_seq_show(struct seq_file *seq, void *v)
+ 		list_for_each_entry_rcu(fa, &li->falh, fa_list) {
+ 			const struct fib_info *fi = fa->fa_info;
+ 			unsigned int flags = fib_flag_trans(fa->fa_type, mask, fi);
+-			int len;
+ 
+ 			if (fa->fa_type == RTN_BROADCAST
+ 			    || fa->fa_type == RTN_MULTICAST)
+ 				continue;
+ 
++			seq_setwidth(seq, 127);
++
+ 			if (fi)
+ 				seq_printf(seq,
+ 					 "%s\t%08X\t%08X\t%04X\t%d\t%u\t"
+-					 "%d\t%08X\t%d\t%u\t%u%n",
++					 "%d\t%08X\t%d\t%u\t%u",
+ 					 fi->fib_dev ? fi->fib_dev->name : "*",
+ 					 prefix,
+ 					 fi->fib_nh->nh_gw, flags, 0, 0,
+@@ -2568,15 +2569,15 @@ static int fib_route_seq_show(struct seq_file *seq, void *v)
+ 					 (fi->fib_advmss ?
+ 					  fi->fib_advmss + 40 : 0),
+ 					 fi->fib_window,
+-					 fi->fib_rtt >> 3, &len);
++					 fi->fib_rtt >> 3);
+ 			else
+ 				seq_printf(seq,
+ 					 "*\t%08X\t%08X\t%04X\t%d\t%u\t"
+-					 "%d\t%08X\t%d\t%u\t%u%n",
++					 "%d\t%08X\t%d\t%u\t%u",
+ 					 prefix, 0, flags, 0, 0, 0,
+-					 mask, 0, 0, 0, &len);
++					 mask, 0, 0, 0);
+ 
+-			seq_printf(seq, "%*s\n", 127 - len, "");
++			seq_pad(seq, '\n');
+ 		}
+ 	}
+ 
+diff --git a/net/ipv4/ping.c b/net/ipv4/ping.c
+index 46b8ad8..8492eea 100644
+--- a/net/ipv4/ping.c
++++ b/net/ipv4/ping.c
+@@ -1078,7 +1078,7 @@ static void ping_seq_stop(struct seq_file *seq, void *v)
+ }
+ 
+ static void ping_format_sock(struct sock *sp, struct seq_file *f,
+-		int bucket, int *len)
++		int bucket)
+ {
+ 	struct inet_sock *inet = inet_sk(sp);
+ 	__be32 dest = inet->inet_daddr;
+@@ -1087,29 +1087,28 @@ static void ping_format_sock(struct sock *sp, struct seq_file *f,
+ 	__u16 srcp = ntohs(inet->inet_sport);
+ 
+ 	seq_printf(f, "%5d: %08X:%04X %08X:%04X"
+-		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %lu %d %pK %d%n",
++		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %lu %d %pK %d",
+ 		bucket, src, srcp, dest, destp, sp->sk_state,
+ 		sk_wmem_alloc_get(sp),
+ 		sk_rmem_alloc_get(sp),
+ 		0, 0L, 0, sock_i_uid(sp), 0, sock_i_ino(sp),
+ 		atomic_read(&sp->sk_refcnt), sp,
+-		atomic_read(&sp->sk_drops), len);
++		atomic_read(&sp->sk_drops));
+ }
+ 
+ static int ping_seq_show(struct seq_file *seq, void *v)
+ {
++	seq_setwidth(seq, 127);
+ 	if (v == SEQ_START_TOKEN)
+-		seq_printf(seq, "%-127s\n",
+-			   "  sl  local_address rem_address   st tx_queue "
++		seq_puts(seq, "  sl  local_address rem_address   st tx_queue "
+ 			   "rx_queue tr tm->when retrnsmt   uid  timeout "
+ 			   "inode ref pointer drops");
+ 	else {
+ 		struct ping_iter_state *state = seq->private;
+-		int len;
+ 
+-		ping_format_sock(v, seq, state->bucket, &len);
+-		seq_printf(seq, "%*s\n", 127 - len, "");
++		ping_format_sock(v, seq, state->bucket);
+ 	}
++	seq_pad(seq, '\n');
+ 	return 0;
+ }
+ 
+diff --git a/net/ipv4/tcp_ipv4.c b/net/ipv4/tcp_ipv4.c
+index ab7bd2c..a9ca30e 100644
+--- a/net/ipv4/tcp_ipv4.c
++++ b/net/ipv4/tcp_ipv4.c
+@@ -2441,13 +2441,13 @@ void tcp_proc_unregister(struct net *net, struct tcp_seq_afinfo *afinfo)
+ EXPORT_SYMBOL(tcp_proc_unregister);
+ 
+ static void get_openreq4(const struct sock *sk, const struct request_sock *req,
+-			 struct seq_file *f, int i, int uid, int *len)
++			 struct seq_file *f, int i, int uid)
+ {
+ 	const struct inet_request_sock *ireq = inet_rsk(req);
+ 	int ttd = req->expires - jiffies;
+ 
+ 	seq_printf(f, "%4d: %08X:%04X %08X:%04X"
+-		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %u %d %pK%n",
++		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %u %d %pK",
+ 		i,
+ 		ireq->loc_addr,
+ 		ntohs(inet_sk(sk)->inet_sport),
+@@ -2462,11 +2462,10 @@ static void get_openreq4(const struct sock *sk, const struct request_sock *req,
+ 		0,  /* non standard timer */
+ 		0, /* open_requests have no inode */
+ 		atomic_read(&sk->sk_refcnt),
+-		req,
+-		len);
++		req);
+ }
+ 
+-static void get_tcp4_sock(struct sock *sk, struct seq_file *f, int i, int *len)
++static void get_tcp4_sock(struct sock *sk, struct seq_file *f, int i)
+ {
+ 	int timer_active;
+ 	unsigned long timer_expires;
+@@ -2502,7 +2501,7 @@ static void get_tcp4_sock(struct sock *sk, struct seq_file *f, int i, int *len)
+ 		rx_queue = max_t(int, tp->rcv_nxt - tp->copied_seq, 0);
+ 
+ 	seq_printf(f, "%4d: %08X:%04X %08X:%04X %02X %08X:%08X %02X:%08lX "
+-			"%08X %5d %8d %lu %d %pK %lu %lu %u %u %d%n",
++			"%08X %5d %8d %lu %d %pK %lu %lu %u %u %d",
+ 		i, src, srcp, dest, destp, sk->sk_state,
+ 		tp->write_seq - tp->snd_una,
+ 		rx_queue,
+@@ -2517,12 +2516,12 @@ static void get_tcp4_sock(struct sock *sk, struct seq_file *f, int i, int *len)
+ 		jiffies_to_clock_t(icsk->icsk_ack.ato),
+ 		(icsk->icsk_ack.quick << 1) | icsk->icsk_ack.pingpong,
+ 		tp->snd_cwnd,
+-		tcp_in_initial_slowstart(tp) ? -1 : tp->snd_ssthresh,
+-		len);
++		tcp_in_initial_slowstart(tp) ? -1 : tp->snd_ssthresh);
++
+ }
+ 
+ static void get_timewait4_sock(const struct inet_timewait_sock *tw,
+-			       struct seq_file *f, int i, int *len)
++			       struct seq_file *f, int i)
+ {
+ 	__be32 dest, src;
+ 	__u16 destp, srcp;
+@@ -2537,10 +2536,10 @@ static void get_timewait4_sock(const struct inet_timewait_sock *tw,
+ 	srcp  = ntohs(tw->tw_sport);
+ 
+ 	seq_printf(f, "%4d: %08X:%04X %08X:%04X"
+-		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %d %d %pK%n",
++		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %d %d %pK",
+ 		i, src, srcp, dest, destp, tw->tw_substate, 0, 0,
+ 		3, jiffies_to_clock_t(ttd), 0, 0, 0, 0,
+-		atomic_read(&tw->tw_refcnt), tw, len);
++		atomic_read(&tw->tw_refcnt), tw);
+ }
+ 
+ #define TMPSZ 150
+@@ -2548,11 +2547,10 @@ static void get_timewait4_sock(const struct inet_timewait_sock *tw,
+ static int tcp4_seq_show(struct seq_file *seq, void *v)
+ {
+ 	struct tcp_iter_state *st;
+-	int len;
+ 
++	seq_setwidth(seq, TMPSZ - 1);
+ 	if (v == SEQ_START_TOKEN) {
+-		seq_printf(seq, "%-*s\n", TMPSZ - 1,
+-			   "  sl  local_address rem_address   st tx_queue "
++		seq_puts(seq, "  sl  local_address rem_address   st tx_queue "
+ 			   "rx_queue tr tm->when retrnsmt   uid  timeout "
+ 			   "inode");
+ 		goto out;
+@@ -2562,17 +2560,17 @@ static int tcp4_seq_show(struct seq_file *seq, void *v)
+ 	switch (st->state) {
+ 	case TCP_SEQ_STATE_LISTENING:
+ 	case TCP_SEQ_STATE_ESTABLISHED:
+-		get_tcp4_sock(v, seq, st->num, &len);
++		get_tcp4_sock(v, seq, st->num);
+ 		break;
+ 	case TCP_SEQ_STATE_OPENREQ:
+-		get_openreq4(st->syn_wait_sk, v, seq, st->num, st->uid, &len);
++		get_openreq4(st->syn_wait_sk, v, seq, st->num, st->uid);
+ 		break;
+ 	case TCP_SEQ_STATE_TIME_WAIT:
+-		get_timewait4_sock(v, seq, st->num, &len);
++		get_timewait4_sock(v, seq, st->num);
+ 		break;
+ 	}
+-	seq_printf(seq, "%*s\n", TMPSZ - 1 - len, "");
+ out:
++	seq_pad(seq, '\n');
+ 	return 0;
+ }
+ 
+diff --git a/net/ipv4/udp.c b/net/ipv4/udp.c
+index fe14105..7c9e1ab 100644
+--- a/net/ipv4/udp.c
++++ b/net/ipv4/udp.c
+@@ -2080,7 +2080,7 @@ EXPORT_SYMBOL(udp_proc_unregister);
+ 
+ /* ------------------------------------------------------------------------ */
+ static void udp4_format_sock(struct sock *sp, struct seq_file *f,
+-		int bucket, int *len)
++		int bucket)
+ {
+ 	struct inet_sock *inet = inet_sk(sp);
+ 	__be32 dest = inet->inet_daddr;
+@@ -2089,29 +2089,28 @@ static void udp4_format_sock(struct sock *sp, struct seq_file *f,
+ 	__u16 srcp	  = ntohs(inet->inet_sport);
+ 
+ 	seq_printf(f, "%5d: %08X:%04X %08X:%04X"
+-		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %lu %d %pK %d%n",
++		" %02X %08X:%08X %02X:%08lX %08X %5d %8d %lu %d %pK %d",
+ 		bucket, src, srcp, dest, destp, sp->sk_state,
+ 		sk_wmem_alloc_get(sp),
+ 		sk_rmem_alloc_get(sp),
+ 		0, 0L, 0, sock_i_uid(sp), 0, sock_i_ino(sp),
+ 		atomic_read(&sp->sk_refcnt), sp,
+-		atomic_read(&sp->sk_drops), len);
++		atomic_read(&sp->sk_drops));
+ }
+ 
+ int udp4_seq_show(struct seq_file *seq, void *v)
+ {
++	seq_setwidth(seq, 127);
+ 	if (v == SEQ_START_TOKEN)
+-		seq_printf(seq, "%-127s\n",
+-			   "  sl  local_address rem_address   st tx_queue "
++		seq_puts(seq, "  sl  local_address rem_address   st tx_queue "
+ 			   "rx_queue tr tm->when retrnsmt   uid  timeout "
+ 			   "inode ref pointer drops");
+ 	else {
+ 		struct udp_iter_state *state = seq->private;
+-		int len;
+ 
+-		udp4_format_sock(v, seq, state->bucket, &len);
+-		seq_printf(seq, "%*s\n", 127 - len, "");
++		udp4_format_sock(v, seq, state->bucket);
+ 	}
++	seq_pad(seq, '\n');
+ 	return 0;
+ }
+ 
+diff --git a/net/phonet/socket.c b/net/phonet/socket.c
+index 4c7eff3..0e3c6ec 100644
+--- a/net/phonet/socket.c
++++ b/net/phonet/socket.c
+@@ -598,25 +598,24 @@ static void pn_sock_seq_stop(struct seq_file *seq, void *v)
+ 
+ static int pn_sock_seq_show(struct seq_file *seq, void *v)
+ {
+-	int len;
+-
++	seq_setwidth(seq, 127);
+ 	if (v == SEQ_START_TOKEN)
+-		seq_printf(seq, "%s%n", "pt  loc  rem rs st tx_queue rx_queue "
+-			"  uid inode ref pointer drops", &len);
++		seq_puts(seq, "pt  loc  rem rs st tx_queue rx_queue "
++			"  uid inode ref pointer drops");
+ 	else {
+ 		struct sock *sk = v;
+ 		struct pn_sock *pn = pn_sk(sk);
+ 
+ 		seq_printf(seq, "%2d %04X:%04X:%02X %02X %08X:%08X %5d %lu "
+-			"%d %pK %d%n",
++			"%d %pK %d",
+ 			sk->sk_protocol, pn->sobject, pn->dobject,
+ 			pn->resource, sk->sk_state,
+ 			sk_wmem_alloc_get(sk), sk_rmem_alloc_get(sk),
+ 			sock_i_uid(sk), sock_i_ino(sk),
+ 			atomic_read(&sk->sk_refcnt), sk,
+-			atomic_read(&sk->sk_drops), &len);
++			atomic_read(&sk->sk_drops));
+ 	}
+-	seq_printf(seq, "%*s\n", 127 - len, "");
++	seq_pad(seq, '\n');
+ 	return 0;
+ }
+ 
+@@ -787,19 +786,19 @@ static void pn_res_seq_stop(struct seq_file *seq, void *v)
+ 
+ static int pn_res_seq_show(struct seq_file *seq, void *v)
+ {
+-	int len;
+-
++	seq_setwidth(seq, 63);
+ 	if (v == SEQ_START_TOKEN)
+-		seq_printf(seq, "%s%n", "rs   uid inode", &len);
++		seq_puts(seq, "rs   uid inode");
+ 	else {
+ 		struct sock **psk = v;
+ 		struct sock *sk = *psk;
+ 
+-		seq_printf(seq, "%02X %5d %lu%n",
+-			   (int) (psk - pnres.sk), sock_i_uid(sk),
+-			   sock_i_ino(sk), &len);
++		seq_printf(seq, "%02X %5d %lu",
++			   (int) (psk - pnres.sk),
++			   from_kuid_munged(seq_user_ns(seq), sock_i_uid(sk)),
++			   sock_i_ino(sk));
+ 	}
+-	seq_printf(seq, "%*s\n", 63 - len, "");
++	seq_pad(seq, '\n');
+ 	return 0;
+ }
+ 
+diff --git a/net/sctp/objcnt.c b/net/sctp/objcnt.c
+index 8ef8e7d..d1e259c 100644
+--- a/net/sctp/objcnt.c
++++ b/net/sctp/objcnt.c
+@@ -85,12 +85,13 @@ static sctp_dbg_objcnt_entry_t sctp_dbg_objcnt[] = {
+  */
+ static int sctp_objcnt_seq_show(struct seq_file *seq, void *v)
+ {
+-	int i, len;
++	int i;
+ 
+ 	i = (int)*(loff_t *)v;
+-	seq_printf(seq, "%s: %d%n", sctp_dbg_objcnt[i].label,
+-				atomic_read(sctp_dbg_objcnt[i].counter), &len);
+-	seq_printf(seq, "%*s\n", 127 - len, "");
++	seq_setwidth(seq, 127);
++	seq_printf(seq, "%s: %d", sctp_dbg_objcnt[i].label,
++				atomic_read(sctp_dbg_objcnt[i].counter));
++	seq_pad(seq, '\n');
+ 	return 0;
+ }
+ 
+
+From 5ac504e0708535b392675243000292ae60b705d0 Mon Sep 17 00:00:00 2001
+From: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Date: Thu, 14 Nov 2013 14:31:56 -0800
+Subject: [PATCH 04/11] seq_file: introduce seq_setwidth() and seq_pad()
+
+There are several users who want to know bytes written by seq_*() for
+alignment purpose.  Currently they are using %n format for knowing it
+because seq_*() returns 0 on success.
+
+This patch introduces seq_setwidth() and seq_pad() for allowing them to
+align without using %n format.
+
+Signed-off-by: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Cc: Joe Perches <joe@perches.com>
+Cc: David Miller <davem@davemloft.net>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Git-commit: 839cc2a94cc3665bafe32203c2f095f4dd470a80)
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+CRs-fixed: 665291
+Change-Id: I727d9af5ed320d717295c9d0f82c88623fb181c1
+Signed-off-by: David Brown <davidb@codeaurora.org>
+---
+ fs/seq_file.c            | 15 +++++++++++++++
+ include/linux/seq_file.h | 15 +++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/fs/seq_file.c b/fs/seq_file.c
+index 06019ca..1a6d65b 100644
+--- a/fs/seq_file.c
++++ b/fs/seq_file.c
+@@ -738,6 +738,21 @@ int seq_write(struct seq_file *seq, const void *data, size_t len)
+ }
+ EXPORT_SYMBOL(seq_write);
+ 
++/**
++ * seq_pad - write padding spaces to buffer
++ * @m: seq_file identifying the buffer to which data should be written
++ * @c: the byte to append after padding if non-zero
++ */
++void seq_pad(struct seq_file *m, char c)
++{
++	int size = m->pad_until - m->count;
++	if (size > 0)
++		seq_printf(m, "%*s", size, "");
++	if (c)
++		seq_putc(m, c);
++}
++EXPORT_SYMBOL(seq_pad);
++
+ struct list_head *seq_list_start(struct list_head *head, loff_t pos)
+ {
+ 	struct list_head *lh;
+diff --git a/include/linux/seq_file.h b/include/linux/seq_file.h
+index fc61854..e156ce1 100644
+--- a/include/linux/seq_file.h
++++ b/include/linux/seq_file.h
+@@ -19,6 +19,7 @@ struct seq_file {
+ 	size_t size;
+ 	size_t from;
+ 	size_t count;
++	size_t pad_until;
+ 	loff_t index;
+ 	loff_t read_pos;
+ 	u64 version;
+@@ -75,6 +76,20 @@ static inline void seq_commit(struct seq_file *m, int num)
+ 	}
+ }
+ 
++/**
++ * seq_setwidth - set padding width
++ * @m: the seq_file handle
++ * @size: the max number of bytes to pad.
++ *
++ * Call seq_setwidth() for setting max width, then call seq_printf() etc. and
++ * finally call seq_pad() to pad the remaining bytes.
++ */
++static inline void seq_setwidth(struct seq_file *m, size_t size)
++{
++	m->pad_until = m->count + size;
++}
++void seq_pad(struct seq_file *m, char c);
++
+ char *mangle_path(char *s, const char *p, const char *esc);
+ int seq_open(struct file *, const struct seq_operations *);
+ ssize_t seq_read(struct file *, char __user *, size_t, loff_t *);
+
+From cd5c18f38b0a3b7b66e3d656358d606c9b57bf3d Mon Sep 17 00:00:00 2001
+From: Kees Cook <keescook@chromium.org>
+Date: Thu, 14 Nov 2013 14:31:58 -0800
+Subject: [PATCH 05/11] vsprintf: ignore %n again
+
+This ignores %n in printf again, as was originally documented.
+Implementing %n poses a greater security risk than utility, so it should
+stay ignored.  To help anyone attempting to use %n, a warning will be
+emitted if it is encountered.
+
+Based on an earlier patch by Joe Perches.
+
+Because %n was designed to write to pointers on the stack, it has been
+frequently used as an attack vector when bugs are found that leak
+user-controlled strings into functions that ultimately process format
+strings.  While this class of bug can still be turned into an
+information leak, removing %n eliminates the common method of elevating
+such a bug into an arbitrary kernel memory writing primitive,
+significantly reducing the danger of this class of bug.
+
+For seq_file users that need to know the length of a written string for
+padding, please see seq_setwidth() and seq_pad() instead.
+
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Cc: Joe Perches <joe@perches.com>
+Cc: Tetsuo Handa <penguin-kernel@I-love.SAKURA.ne.jp>
+Cc: David Miller <davem@davemloft.net>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Git-commit: 9196436ab2f713b823a2ba2024cb69f40b2f54a5
+Git-repo: git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+CRs-fixed: 665291
+Change-Id: Id191acaf66e3c395df92b0a77331269b525e3cad
+Signed-off-by: David Brown <davidb@codeaurora.org>
+---
+ lib/vsprintf.c | 20 +++++++++-----------
+ 1 file changed, 9 insertions(+), 11 deletions(-)
+
+diff --git a/lib/vsprintf.c b/lib/vsprintf.c
+index f5dfe0c..f0dcd2e 100644
+--- a/lib/vsprintf.c
++++ b/lib/vsprintf.c
+@@ -1280,18 +1280,16 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
+ 			break;
+ 
+ 		case FORMAT_TYPE_NRCHARS: {
+-			u8 qualifier = spec.qualifier;
++			/*
++			 * Since %n poses a greater security risk than
++			 * utility, ignore %n and skip its argument.
++			 */
++			void *skip_arg;
+ 
+-			if (qualifier == 'l') {
+-				long *ip = va_arg(args, long *);
+-				*ip = (str - buf);
+-			} else if (_tolower(qualifier) == 'z') {
+-				size_t *ip = va_arg(args, size_t *);
+-				*ip = (str - buf);
+-			} else {
+-				int *ip = va_arg(args, int *);
+-				*ip = (str - buf);
+-			}
++			WARN_ONCE(1, "Please remove ignored %%n in '%s'\n",
++					old_fmt);
++
++			skip_arg = va_arg(args, void *);
+ 			break;
+ 		}
+ 
+
+From 8de94fb373449a6584a3714063ab063b5a0118f2 Mon Sep 17 00:00:00 2001
+From: Nicholas Bellinger <nab@linux-iscsi.org>
+Date: Tue, 7 Jan 2014 22:40:27 +0000
+Subject: [PATCH 06/11] target/rd: Refactor rd_build_device_space +
+ rd_release_device_space
+
+This patch refactors rd_build_device_space() + rd_release_device_space()
+into rd_allocate_sgl_table() + rd_release_device_space() so that they
+may be used seperatly for setup + release of protection information
+scatterlists.
+
+Also add explicit memset of pages within rd_allocate_sgl_table() based
+upon passed 'init_payload' value.
+
+v2 changes:
+  - Drop unused sg_table from rd_release_device_space (Wei)
+
+Change-Id: I0d42113c0e2d703fe7567a804003b034fd4fa0b7
+Cc: Martin K. Petersen <martin.petersen@oracle.com>
+Cc: Christoph Hellwig <hch@lst.de>
+Cc: Hannes Reinecke <hare@suse.de>
+Cc: Sagi Grimberg <sagig@mellanox.com>
+Cc: Or Gerlitz <ogerlitz@mellanox.com>
+Signed-off-by: Nicholas Bellinger <nab@linux-iscsi.org>
+Git-commit:4442dc8a92b8f9ad8ee9e7f8438f4c04c03a22dc
+Git-repo:https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git
+[ggober@codeaurora.org:resolve trivial merge conflicts in target_core_rd.c]
+Signed-off-by: Gopal G Goberu <ggober@codeaurora.org>
+---
+ drivers/target/target_core_rd.c | 108 +++++++++++++++++++++++++---------------
+ 1 file changed, 68 insertions(+), 40 deletions(-)
+
+diff --git a/drivers/target/target_core_rd.c b/drivers/target/target_core_rd.c
+index 8b68f7b..65b99fc 100644
+--- a/drivers/target/target_core_rd.c
++++ b/drivers/target/target_core_rd.c
+@@ -82,23 +82,14 @@ static void rd_detach_hba(struct se_hba *hba)
+ 	hba->hba_ptr = NULL;
+ }
+ 
+-/*	rd_release_device_space():
+- *
+- *
+- */
+-static void rd_release_device_space(struct rd_dev *rd_dev)
++static u32 rd_release_sgl_table(struct rd_dev *rd_dev, struct rd_dev_sg_table *sg_table,
++				 u32 sg_table_count)
+ {
+-	u32 i, j, page_count = 0, sg_per_table;
+-	struct rd_dev_sg_table *sg_table;
+ 	struct page *pg;
+ 	struct scatterlist *sg;
++	u32 i, j, page_count = 0, sg_per_table;
+ 
+-	if (!rd_dev->sg_table_array || !rd_dev->sg_table_count)
+-		return;
+-
+-	sg_table = rd_dev->sg_table_array;
+-
+-	for (i = 0; i < rd_dev->sg_table_count; i++) {
++	for (i = 0; i < sg_table_count; i++) {
+ 		sg = sg_table[i].sg_table;
+ 		sg_per_table = sg_table[i].rd_sg_count;
+ 
+@@ -109,16 +100,28 @@ static void rd_release_device_space(struct rd_dev *rd_dev)
+ 				page_count++;
+ 			}
+ 		}
+-
+ 		kfree(sg);
+ 	}
+ 
++	kfree(sg_table);
++	return page_count;
++}
++
++static void rd_release_device_space(struct rd_dev *rd_dev)
++{
++	u32 page_count;
++
++	if (!rd_dev->sg_table_array || !rd_dev->sg_table_count)
++		return;
++
++	page_count = rd_release_sgl_table(rd_dev, rd_dev->sg_table_array,
++					  rd_dev->sg_table_count);
++
+ 	pr_debug("CORE_RD[%u] - Released device space for Ramdisk"
+ 		" Device ID: %u, pages %u in %u tables total bytes %lu\n",
+ 		rd_dev->rd_host->rd_host_id, rd_dev->rd_dev_id, page_count,
+ 		rd_dev->sg_table_count, (unsigned long)page_count * PAGE_SIZE);
+ 
+-	kfree(sg_table);
+ 	rd_dev->sg_table_array = NULL;
+ 	rd_dev->sg_table_count = 0;
+ }
+@@ -128,33 +131,15 @@ static void rd_release_device_space(struct rd_dev *rd_dev)
+  *
+  *
+  */
+-static int rd_build_device_space(struct rd_dev *rd_dev)
++static int rd_allocate_sgl_table(struct rd_dev *rd_dev, struct rd_dev_sg_table *sg_table,
++				 u32 total_sg_needed, unsigned char init_payload)
+ {
+-	u32 i = 0, j, page_offset = 0, sg_per_table, sg_tables, total_sg_needed;
++	u32 i = 0, j, page_offset = 0, sg_per_table;
+ 	u32 max_sg_per_table = (RD_MAX_ALLOCATION_SIZE /
+ 				sizeof(struct scatterlist));
+-	struct rd_dev_sg_table *sg_table;
+ 	struct page *pg;
+ 	struct scatterlist *sg;
+-
+-	if (rd_dev->rd_page_count <= 0) {
+-		pr_err("Illegal page count: %u for Ramdisk device\n",
+-			rd_dev->rd_page_count);
+-		return -EINVAL;
+-	}
+-	total_sg_needed = rd_dev->rd_page_count;
+-
+-	sg_tables = (total_sg_needed / max_sg_per_table) + 1;
+-
+-	sg_table = kzalloc(sg_tables * sizeof(struct rd_dev_sg_table), GFP_KERNEL);
+-	if (!sg_table) {
+-		pr_err("Unable to allocate memory for Ramdisk"
+-			" scatterlist tables\n");
+-		return -ENOMEM;
+-	}
+-
+-	rd_dev->sg_table_array = sg_table;
+-	rd_dev->sg_table_count = sg_tables;
++	unsigned char *p;
+ 
+ 	while (total_sg_needed) {
+ 		sg_per_table = (total_sg_needed > max_sg_per_table) ?
+@@ -185,16 +170,59 @@ static int rd_build_device_space(struct rd_dev *rd_dev)
+ 			}
+ 			sg_assign_page(&sg[j], pg);
+ 			sg[j].length = PAGE_SIZE;
++
++			p = kmap(pg);
++			memset(p, init_payload, PAGE_SIZE);
++			kunmap(pg);
+ 		}
+ 
+ 		page_offset += sg_per_table;
+ 		total_sg_needed -= sg_per_table;
+ 	}
+ 
++	return 0;
++}
++
++static int rd_build_device_space(struct rd_dev *rd_dev)
++{
++	struct rd_dev_sg_table *sg_table;
++	u32 sg_tables, total_sg_needed;
++	u32 max_sg_per_table = (RD_MAX_ALLOCATION_SIZE /
++				sizeof(struct scatterlist));
++	int rc;
++
++	if (rd_dev->rd_page_count <= 0) {
++		pr_err("Illegal page count: %u for Ramdisk device\n",
++		       rd_dev->rd_page_count);
++		return -EINVAL;
++	}
++
++	/* Don't need backing pages for NULLIO */
++	if (rd_dev->rd_flags & RDF_NULLIO)
++		return 0;
++
++	total_sg_needed = rd_dev->rd_page_count;
++
++	sg_tables = (total_sg_needed / max_sg_per_table) + 1;
++
++	sg_table = kzalloc(sg_tables * sizeof(struct rd_dev_sg_table), GFP_KERNEL);
++	if (!sg_table) {
++		pr_err("Unable to allocate memory for Ramdisk"
++		       " scatterlist tables\n");
++		return -ENOMEM;
++	}
++
++	rd_dev->sg_table_array = sg_table;
++	rd_dev->sg_table_count = sg_tables;
++
++	rc = rd_allocate_sgl_table(rd_dev, sg_table, total_sg_needed, 0x00);
++	if (rc)
++		return rc;
++
+ 	pr_debug("CORE_RD[%u] - Built Ramdisk Device ID: %u space of"
+-		" %u pages in %u tables\n", rd_dev->rd_host->rd_host_id,
+-		rd_dev->rd_dev_id, rd_dev->rd_page_count,
+-		rd_dev->sg_table_count);
++		 " %u pages in %u tables\n", rd_dev->rd_host->rd_host_id,
++		 rd_dev->rd_dev_id, rd_dev->rd_page_count,
++		 rd_dev->sg_table_count);
+ 
+ 	return 0;
+ }
+
+From aabff59b07ebeaf1c02dfb38f223502eddf69424 Mon Sep 17 00:00:00 2001
+From: Hariprasad Dhalinarasimha <hnamgund@codeaurora.org>
+Date: Fri, 21 Jun 2013 18:40:50 -0700
+Subject: [PATCH 07/11] qseecom: Unload the app upon receiving qseecom_release.
+
+Upon receiving qseecom_release() app corresponding to the app id
+needs to be shutdown.This is applicable to user space clients as well.
+
+Change-Id: Ie659a9409f8470b7ed4a5088e6779b50c5dc1cca
+Signed-off-by: Hariprasad Dhalinarasimha <hnamgund@codeaurora.org>
+Signed-off-by: Zhen Kong <zkong@codeaurora.org>
+---
+ drivers/misc/qseecom.c | 36 +++++++++++++++++++++++++++---------
+ 1 file changed, 27 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/misc/qseecom.c b/drivers/misc/qseecom.c
+index f269159..12b6fc8 100644
+--- a/drivers/misc/qseecom.c
++++ b/drivers/misc/qseecom.c
+@@ -200,6 +200,8 @@ struct qseecom_control {
+ 	uint32_t          qseos_version;
+ 	struct device *pdev;
+ 	struct cdev cdev;
++
++	bool uclient_shutdown_app;
+ };
+ 
+ struct qseecom_client_handle {
+@@ -834,7 +836,8 @@ static int qseecom_unmap_ion_allocated_memory(struct qseecom_dev_handle *data)
+ 	return ret;
+ }
+ 
+-static int qseecom_unload_app(struct qseecom_dev_handle *data)
++static int qseecom_unload_app(struct qseecom_dev_handle *data,
++				bool uclient_release)
+ {
+ 	unsigned long flags;
+ 	int ret = 0;
+@@ -850,14 +853,21 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data)
+ 								list) {
+ 			if (ptr_app->app_id == data->client.app_id) {
+ 				found_app = true;
+-				if (ptr_app->ref_cnt == 1) {
++				if ((uclient_release) &&
++					(!qseecom.uclient_shutdown_app)) {
++					ptr_app->ref_cnt = 0;
+ 					unload = true;
+ 					break;
+ 				} else {
+-					ptr_app->ref_cnt--;
+-					pr_warn("Can't unload app(%d) inuse\n",
++					if (ptr_app->ref_cnt == 1) {
++						unload = true;
++						break;
++					} else {
++						ptr_app->ref_cnt--;
++						pr_debug("Can't unload app(%d) inuse\n",
+ 							ptr_app->app_id);
+-					break;
++						break;
++					}
+ 				}
+ 			}
+ 		}
+@@ -1639,7 +1649,7 @@ int qseecom_shutdown_app(struct qseecom_handle **handle)
+ 	if (!found_handle)
+ 		pr_err("Unable to find the handle, exiting\n");
+ 	else
+-		ret = qseecom_unload_app(data);
++		ret = qseecom_unload_app(data, false);
+ 	if (ret == 0) {
+ 		kzfree(data);
+ 		kzfree(*handle);
+@@ -2145,7 +2155,8 @@ static long qseecom_ioctl(struct file *file, unsigned cmd,
+ 	case QSEECOM_IOCTL_UNLOAD_APP_REQ: {
+ 		mutex_lock(&app_access_lock);
+ 		atomic_inc(&data->ioctl_count);
+-		ret = qseecom_unload_app(data);
++		qseecom.uclient_shutdown_app = true;
++		ret = qseecom_unload_app(data, false);
+ 		atomic_dec(&data->ioctl_count);
+ 		mutex_unlock(&app_access_lock);
+ 		if (ret)
+@@ -2272,7 +2283,7 @@ static int qseecom_release(struct inode *inode, struct file *file)
+ 			ret = qseecom_unregister_listener(data);
+ 			break;
+ 		case QSEECOM_CLIENT_APP:
+-			ret = qseecom_unload_app(data);
++			ret = qseecom_unload_app(data, true);
+ 			break;
+ 		case QSEECOM_SECURE_SERVICE:
+ 			ret = qseecom_unmap_ion_allocated_memory(data);
+@@ -2284,10 +2295,17 @@ static int qseecom_release(struct inode *inode, struct file *file)
+ 		case QSEECOM_UNAVAILABLE_CLIENT_APP:
+ 			break;
+ 		default:
++			ret = -EINVAL;
+ 			pr_err("Unsupported clnt_handle_type %d",
+ 				data->type);
+ 			break;
+ 		}
++		if (ret) {
++			pr_err("Close failed\n");
++			kfree(data);
++			return ret;
++		}
++		qseecom.uclient_shutdown_app = false;
+ 	}
+ 	if (qseecom.qseos_version == QSEOS_VERSION_13) {
+ 		mutex_lock(&pil_access_lock);
+@@ -2556,7 +2574,7 @@ static int __devinit qseecom_remove(struct platform_device *pdev)
+ 			goto exit_free_kc_handle;
+ 
+ 		list_del(&kclient->list);
+-		ret = qseecom_unload_app(kclient->handle->dev);
++		ret = qseecom_unload_app(kclient->handle->dev, false);
+ 		if (!ret) {
+ 			kzfree(kclient->handle->dev);
+ 			kzfree(kclient->handle);
+
+From 1f0f7c4a8e4d7dc2cf19edc2c388b12fb6362620 Mon Sep 17 00:00:00 2001
+From: Zhen Kong <zkong@codeaurora.org>
+Date: Fri, 29 Mar 2013 17:28:31 -0700
+Subject: [PATCH 08/11] qseecom: Fix issue with incomplete command exiting
+ prematurely
+
+A process waiting on a signal can be awaken by any signals. We
+need to only continue processing when the condition of the
+wait event is met.
+
+Change-Id: Ib2102babbb505876f89b04399729e6ff5a475605
+Signed-off-by: Mona Hossain <mhossain@codeaurora.org>
+Signed-off-by: Zhen Kong <zkong@codeaurora.org>
+---
+ drivers/misc/qseecom.c | 27 +++++++++++++++++++--------
+ 1 file changed, 19 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/misc/qseecom.c b/drivers/misc/qseecom.c
+index 12b6fc8..c82a0cd 100644
+--- a/drivers/misc/qseecom.c
++++ b/drivers/misc/qseecom.c
+@@ -563,10 +563,13 @@ static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
+ 					struct qseecom_command_scm_resp *resp)
+ {
+ 	int ret = 0;
++	int rc = 0;
+ 	uint32_t lstnr;
+ 	unsigned long flags;
+ 	struct qseecom_client_listener_data_irsp send_data_rsp;
+ 	struct qseecom_registered_listener_list *ptr_svc = NULL;
++	sigset_t new_sigset;
++	sigset_t old_sigset;
+ 
+ 
+ 	while (resp->result == QSEOS_RESULT_INCOMPLETE) {
+@@ -597,16 +600,24 @@ static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
+ 		}
+ 		pr_debug("waking up rcv_req_wq and "
+ 				"waiting for send_resp_wq\n");
+-		if (wait_event_freezable(qseecom.send_resp_wq,
+-				__qseecom_listener_has_sent_rsp(data))) {
+-			pr_warning("Interrupted: exiting send_cmd loop\n");
+-			return -ERESTARTSYS;
+-		}
+ 
++		/* initialize the new signal mask with all signals*/
++		sigfillset(&new_sigset);
++		/* block all signals */
++		sigprocmask(SIG_SETMASK, &new_sigset, &old_sigset);
++
++		do {
++			if (!wait_event_freezable(qseecom.send_resp_wq,
++				__qseecom_listener_has_sent_rsp(data)))
++				break;
++		} while (1);
++
++		/* restore signal mask */
++		sigprocmask(SIG_SETMASK, &old_sigset, NULL);
+ 		if (data->abort) {
+-			pr_err("Aborting listener service %d\n",
+-				data->listener.id);
+-			return -ENODEV;
++			pr_err("Abort clnt %d waiting on lstnr svc %d, ret %d",
++				data->client.app_id, lstnr, ret);
++			rc = -ENODEV;
+ 		}
+ 		qseecom.send_resp_flag = 0;
+ 		send_data_rsp.qsee_cmd_id = QSEOS_LISTENER_DATA_RSP_COMMAND;
+
+From 192e8bf4b9ee5e11ed02bf1d816409e462210ae0 Mon Sep 17 00:00:00 2001
+From: AnilKumar Chimata <anilc@codeaurora.org>
+Date: Thu, 5 Sep 2013 18:00:28 +0530
+Subject: [PATCH 09/11] qseecom: Fix issues with failure to release client
+ handle
+
+In some scenarios when qseecom_release is called with the incorrect
+client handle type. Hence proper cleanup is not done for the memory
+allocated to the device handle or to unload the app.
+
+This change addresses the cleanup issues related to qseecom client in
+qseecom_release call by ensuring the handle type is set correctly and
+cleanup is done properly based on client type.
+
+Change-Id: I126aa431ce635ae98100b774e3d92b704635d199
+Signed-off-by: AnilKumar Chimata <anilc@codeaurora.org>
+---
+ drivers/misc/qseecom.c | 18 +++++++++++++-----
+ 1 file changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/misc/qseecom.c b/drivers/misc/qseecom.c
+index c82a0cd..32b39e7 100644
+--- a/drivers/misc/qseecom.c
++++ b/drivers/misc/qseecom.c
+@@ -383,7 +383,6 @@ static int qseecom_register_listener(struct qseecom_dev_handle *data,
+ 		return ret;
+ 	}
+ 	data->listener.id = 0;
+-	data->type = QSEECOM_LISTENER_SERVICE;
+ 	if (!__qseecom_is_svc_unique(data, &rcvd_lstnr)) {
+ 		pr_err("Service is not unique and is already registered\n");
+ 		data->released = true;
+@@ -2086,6 +2085,7 @@ static long qseecom_ioctl(struct file *file, unsigned cmd,
+ 	switch (cmd) {
+ 	case QSEECOM_IOCTL_REGISTER_LISTENER_REQ: {
+ 		pr_debug("ioctl register_listener_req()\n");
++		data->type = QSEECOM_LISTENER_SERVICE;
+ 		atomic_inc(&data->ioctl_count);
+ 		ret = qseecom_register_listener(data, argp);
+ 		atomic_dec(&data->ioctl_count);
+@@ -2147,6 +2147,8 @@ static long qseecom_ioctl(struct file *file, unsigned cmd,
+ 		break;
+ 	}
+ 	case QSEECOM_IOCTL_SET_MEM_PARAM_REQ: {
++		data->type = QSEECOM_CLIENT_APP;
++		pr_debug("SET_MEM_PARAM: qseecom addr = 0x%x\n", (u32)data);
+ 		ret = qseecom_set_client_mem_param(data, argp);
+ 		if (ret)
+ 			pr_err("failed Qqseecom_set_mem_param request: %d\n",
+@@ -2154,6 +2156,8 @@ static long qseecom_ioctl(struct file *file, unsigned cmd,
+ 		break;
+ 	}
+ 	case QSEECOM_IOCTL_LOAD_APP_REQ: {
++		data->type = QSEECOM_CLIENT_APP;
++		pr_debug("LOAD_APP_REQ: qseecom_addr = 0x%x\n", (u32)data);
+ 		mutex_lock(&app_access_lock);
+ 		atomic_inc(&data->ioctl_count);
+ 		ret = qseecom_load_app(data, argp);
+@@ -2164,6 +2168,7 @@ static long qseecom_ioctl(struct file *file, unsigned cmd,
+ 		break;
+ 	}
+ 	case QSEECOM_IOCTL_UNLOAD_APP_REQ: {
++		pr_debug("UNLOAD_APP: qseecom_addr = 0x%x\n", (u32)data);
+ 		mutex_lock(&app_access_lock);
+ 		atomic_inc(&data->ioctl_count);
+ 		qseecom.uclient_shutdown_app = true;
+@@ -2201,6 +2206,7 @@ static long qseecom_ioctl(struct file *file, unsigned cmd,
+ 		break;
+ 	}
+ 	case QSEECOM_IOCTL_LOAD_EXTERNAL_ELF_REQ: {
++		data->type = QSEECOM_UNAVAILABLE_CLIENT_APP;
+ 		data->released = true;
+ 		if (qseecom.qseos_version == QSEOS_VERSION_13) {
+ 			pr_err("Loading External elf image unsupported in rev 0x13\n");
+@@ -2233,6 +2239,8 @@ static long qseecom_ioctl(struct file *file, unsigned cmd,
+ 		break;
+ 	}
+ 	case QSEECOM_IOCTL_APP_LOADED_QUERY_REQ: {
++		data->type = QSEECOM_CLIENT_APP;
++		pr_debug("APP_LOAD_QUERY: qseecom_addr = 0x%x\n", (u32)data);
+ 		mutex_lock(&app_access_lock);
+ 		atomic_inc(&data->ioctl_count);
+ 		ret = qseecom_query_app_loaded(data, argp);
+@@ -2288,7 +2296,8 @@ static int qseecom_release(struct inode *inode, struct file *file)
+ 	int ret = 0;
+ 
+ 	if (data->released == false) {
+-		pr_warn("data->released == false\n");
++		pr_warn("data: released = false, type = %d, data = 0x%x\n",
++						data->type, (u32)data);
+ 		switch (data->type) {
+ 		case QSEECOM_LISTENER_SERVICE:
+ 			ret = qseecom_unregister_listener(data);
+@@ -2297,11 +2306,10 @@ static int qseecom_release(struct inode *inode, struct file *file)
+ 			ret = qseecom_unload_app(data, true);
+ 			break;
+ 		case QSEECOM_SECURE_SERVICE:
++		case QSEECOM_GENERIC:
+ 			ret = qseecom_unmap_ion_allocated_memory(data);
+-			if (ret) {
++			if (ret)
+ 				pr_err("Close failed\n");
+-				return ret;
+-			}
+ 			break;
+ 		case QSEECOM_UNAVAILABLE_CLIENT_APP:
+ 			break;
+
+From b6f35defef8d141903dcfbb05a0ed83c3433454c Mon Sep 17 00:00:00 2001
+From: Zhen Kong <zkong@codeaurora.org>
+Date: Fri, 9 May 2014 18:27:53 -0700
+Subject: [PATCH 10/11] qseecom: Add support to handle multiple app load &
+ unload
+
+Media server is associated with multiple apps on TZ-side.
+Unloading a single app for clean up is not enought. QSEECOM
+needs to handle the app load & unload of multiple apps
+associated with the client. During app_load & app_unload
+along with app_id, app_name should also be checked. Besides,
+keymaster will not be unloaded.
+
+Change-Id: Iea53362a21e359e54e40a0a93688a05264cfde5c
+Signed-off-by: Hariprasad Dhalinarasimha <hnamgund@codeaurora.org>
+Signed-off-by: Zhen Kong <zkong@codeaurora.org>
+---
+ drivers/misc/qseecom.c | 135 ++++++++++++++++++++++++++++++++++++-------------
+ 1 file changed, 101 insertions(+), 34 deletions(-)
+
+diff --git a/drivers/misc/qseecom.c b/drivers/misc/qseecom.c
+index 32b39e7..b55ee8d 100644
+--- a/drivers/misc/qseecom.c
++++ b/drivers/misc/qseecom.c
+@@ -176,6 +176,7 @@ struct qseecom_registered_app_list {
+ 	struct list_head                 list;
+ 	u32  app_id;
+ 	u32  ref_cnt;
++	char app_name[MAX_APP_NAME_SIZE];
+ };
+ 
+ struct qseecom_registered_kclient_list {
+@@ -201,7 +202,6 @@ struct qseecom_control {
+ 	struct device *pdev;
+ 	struct cdev cdev;
+ 
+-	bool uclient_shutdown_app;
+ };
+ 
+ struct qseecom_client_handle {
+@@ -211,6 +211,7 @@ struct qseecom_client_handle {
+ 	uint32_t user_virt_sb_base;
+ 	size_t sb_length;
+ 	struct ion_handle *ihandle;		/* Retrieve phy addr */
++	char app_name[MAX_APP_NAME_SIZE];
+ };
+ 
+ struct qseecom_listener_handle {
+@@ -795,7 +796,9 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
+ 		}
+ 		entry->app_id = app_id;
+ 		entry->ref_cnt = 1;
+-
++		memset((void *)entry->app_name, 0, MAX_APP_NAME_SIZE);
++		memcpy((void *)entry->app_name,
++			(void *)load_img_req.img_name, MAX_APP_NAME_SIZE);
+ 		/* Deallocate the handle */
+ 		if (!IS_ERR_OR_NULL(ihandle))
+ 			ion_free(qseecom.ion_clnt, ihandle);
+@@ -809,6 +812,9 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
+ 		(char *)(load_img_req.img_name));
+ 	}
+ 	data->client.app_id = app_id;
++	memset((void *)data->client.app_name, 0, MAX_APP_NAME_SIZE);
++	memcpy((void *)data->client.app_name,
++		(void *)load_img_req.img_name, MAX_APP_NAME_SIZE);
+ 	load_img_req.app_id = app_id;
+ 	if (copy_to_user(argp, &load_img_req, sizeof(load_img_req))) {
+ 		pr_err("copy_to_user failed\n");
+@@ -847,58 +853,64 @@ static int qseecom_unmap_ion_allocated_memory(struct qseecom_dev_handle *data)
+ }
+ 
+ static int qseecom_unload_app(struct qseecom_dev_handle *data,
+-				bool uclient_release)
++				bool app_crash)
+ {
+ 	unsigned long flags;
++	unsigned long flags1;
+ 	int ret = 0;
+ 	struct qseecom_command_scm_resp resp;
+-	struct qseecom_registered_app_list *ptr_app;
++	struct qseecom_registered_app_list *ptr_app = NULL;
+ 	bool unload = false;
+ 	bool found_app = false;
++	bool found_dead_app = false;
+ 
+-	if ((qseecom.qseos_version == QSEOS_VERSION_14) &&
+-				(data->client.app_id > 0)) {
++	if (!memcmp(data->client.app_name, "keymaste", strlen("keymaste"))) {
++		pr_warn("Do not unload keymaster app from tz\n");
++		return 0;
++	}
++
++	if (data->client.app_id > 0) {
+ 		spin_lock_irqsave(&qseecom.registered_app_list_lock, flags);
+ 		list_for_each_entry(ptr_app, &qseecom.registered_app_list_head,
+ 								list) {
+ 			if (ptr_app->app_id == data->client.app_id) {
+-				found_app = true;
+-				if ((uclient_release) &&
+-					(!qseecom.uclient_shutdown_app)) {
+-					ptr_app->ref_cnt = 0;
+-					unload = true;
+-					break;
+-				} else {
+-					if (ptr_app->ref_cnt == 1) {
++				if (!memcmp((void *)ptr_app->app_name,
++					(void *)data->client.app_name,
++					strlen(data->client.app_name))) {
++					found_app = true;
++					if (app_crash) {
+ 						unload = true;
+ 						break;
+ 					} else {
+-						ptr_app->ref_cnt--;
+-						pr_debug("Can't unload app(%d) inuse\n",
+-							ptr_app->app_id);
+-						break;
++						if (ptr_app->ref_cnt == 1) {
++							unload = true;
++							break;
++						}
+ 					}
++				} else {
++					found_dead_app = true;
++					break;
+ 				}
+ 			}
+ 		}
+ 		spin_unlock_irqrestore(&qseecom.registered_app_list_lock,
+-								flags);
+-		if (found_app == false) {
+-			pr_err("Cannot find app with id = %d\n",
+-						data->client.app_id);
++						flags);
++		if (found_app == false && found_dead_app == false) {
++			pr_err("Cannot find app with id = %d (%s)\n",
++				data->client.app_id,
++				(char *)data->client.app_name);
+ 			return -EINVAL;
+ 		}
+ 	}
+ 
+-	if ((unload) && (qseecom.qseos_version == QSEOS_VERSION_14)) {
+-		struct qseecom_unload_app_ireq req;
+-
++	if (found_dead_app) {
++		pr_warn("cleanup dead app: app_id %d(%s)\n", data->client.app_id,
++			(char *)data->client.app_name);
+ 		__qseecom_cleanup_app(data);
+-		spin_lock_irqsave(&qseecom.registered_app_list_lock, flags);
+-		list_del(&ptr_app->list);
+-		kzfree(ptr_app);
+-		spin_unlock_irqrestore(&qseecom.registered_app_list_lock,
+-								flags);
++	}
++
++	if (unload) {
++		struct qseecom_unload_app_ireq req;
+ 		/* Populate the structure for sending scm call to load image */
+ 		req.qsee_cmd_id = QSEOS_APP_SHUTDOWN_COMMAND;
+ 		req.app_id = data->client.app_id;
+@@ -909,11 +921,20 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
+ 				&resp, sizeof(resp));
+ 		if (ret) {
+ 			pr_err("scm_call to unload app (id = %d) failed\n",
+-							req.app_id);
++					req.app_id);
+ 			return -EFAULT;
+ 		} else {
+ 			pr_warn("App id %d now unloaded\n", req.app_id);
+ 		}
++		if (resp.result == QSEOS_RESULT_FAILURE) {
++			pr_err("app (%d) unload_failed!!\n",
++					data->client.app_id);
++			return -EFAULT;
++		}
++		if (resp.result == QSEOS_RESULT_SUCCESS)
++			pr_info("App (%d) is unloaded!!\n",
++					data->client.app_id);
++		__qseecom_cleanup_app(data);
+ 		if (resp.result == QSEOS_RESULT_INCOMPLETE) {
+ 			ret = __qseecom_process_incomplete_cmd(data, &resp);
+ 			if (ret) {
+@@ -936,6 +957,28 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
+ 			}
+ 		}
+ 	}
++	if (found_app) {
++		spin_lock_irqsave(&qseecom.registered_app_list_lock, flags1);
++		if (app_crash) {
++			ptr_app->ref_cnt = 0;
++			pr_debug("app_crash: ref_count = 0\n");
++		} else {
++			if (ptr_app->ref_cnt == 1) {
++				ptr_app->ref_cnt = 0;
++				pr_info("ref_count set to 0\n");
++			} else {
++				ptr_app->ref_cnt--;
++				pr_info("Can't unload app(%d) inuse\n",
++					ptr_app->app_id);
++			}
++		}
++		if (unload) {
++			list_del(&ptr_app->list);
++			kzfree(ptr_app);
++		}
++		spin_unlock_irqrestore(&qseecom.registered_app_list_lock,
++								flags1);
++	}
+ 	qseecom_unmap_ion_allocated_memory(data);
+ 	data->released = true;
+ 	return ret;
+@@ -1046,6 +1089,9 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
+ 	u32 reqd_len_sb_in = 0;
+ 	struct qseecom_client_send_data_ireq send_data_req;
+ 	struct qseecom_command_scm_resp resp;
++	unsigned long flags;
++	struct qseecom_registered_app_list *ptr_app;
++	bool found_app = false;
+ 
+ 	if (req->cmd_req_buf == NULL || req->resp_buf == NULL) {
+ 		pr_err("cmd buffer or response buffer is null\n");
+@@ -1087,6 +1133,26 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
+ 		return -ENOMEM;
+ 	}
+ 
++	/* find app_id & img_name from list */
++	spin_lock_irqsave(&qseecom.registered_app_list_lock, flags);
++	list_for_each_entry(ptr_app, &qseecom.registered_app_list_head,
++							list) {
++		if ((ptr_app->app_id == data->client.app_id) &&
++			 (!memcmp((void *)ptr_app->app_name,
++				(void *)data->client.app_name,
++				strlen(data->client.app_name)))) {
++			found_app = true;
++			break;
++		}
++	}
++	spin_unlock_irqrestore(&qseecom.registered_app_list_lock, flags);
++
++	if (!found_app) {
++		pr_err("app_id %d (%s) is not found\n", data->client.app_id,
++			(char *)data->client.app_name);
++		return -EINVAL;
++	}
++
+ 	send_data_req.qsee_cmd_id = QSEOS_CLIENT_SEND_DATA_COMMAND;
+ 	send_data_req.app_id = data->client.app_id;
+ 	send_data_req.req_ptr = (void *)(__qseecom_uvirt_to_kphys(data,
+@@ -2059,7 +2125,9 @@ static int qseecom_query_app_loaded(struct qseecom_dev_handle *data,
+ 				&qseecom.registered_app_list_lock, flags);
+ 		data->client.app_id = ret;
+ 		query_req.app_id = ret;
+-
++		memset((void *)data->client.app_name, 0, MAX_APP_NAME_SIZE);
++		memcpy((void *)data->client.app_name,
++				(void *)query_req.app_name, MAX_APP_NAME_SIZE);
+ 		if (copy_to_user(argp, &query_req, sizeof(query_req))) {
+ 			pr_err("copy_to_user failed\n");
+ 			return -EFAULT;
+@@ -2171,7 +2239,6 @@ static long qseecom_ioctl(struct file *file, unsigned cmd,
+ 		pr_debug("UNLOAD_APP: qseecom_addr = 0x%x\n", (u32)data);
+ 		mutex_lock(&app_access_lock);
+ 		atomic_inc(&data->ioctl_count);
+-		qseecom.uclient_shutdown_app = true;
+ 		ret = qseecom_unload_app(data, false);
+ 		atomic_dec(&data->ioctl_count);
+ 		mutex_unlock(&app_access_lock);
+@@ -2268,6 +2335,7 @@ static int qseecom_open(struct inode *inode, struct file *file)
+ 	data->abort = 0;
+ 	data->type = QSEECOM_GENERIC;
+ 	data->released = false;
++	memset((void *)data->client.app_name, 0, MAX_APP_NAME_SIZE);
+ 	init_waitqueue_head(&data->abort_wq);
+ 	atomic_set(&data->ioctl_count, 0);
+ 	if (qseecom.qseos_version == QSEOS_VERSION_13) {
+@@ -2324,7 +2392,6 @@ static int qseecom_release(struct inode *inode, struct file *file)
+ 			kfree(data);
+ 			return ret;
+ 		}
+-		qseecom.uclient_shutdown_app = false;
+ 	}
+ 	if (qseecom.qseos_version == QSEOS_VERSION_13) {
+ 		mutex_lock(&pil_access_lock);
+
+From 210ef0e871c95b1729a4f4ac66ceb1a780f25836 Mon Sep 17 00:00:00 2001
+From: Zhen Kong <zkong@codeaurora.org>
+Date: Sat, 28 Jun 2014 14:29:30 -0700
+Subject: [PATCH 11/11] qseecom: fix an issue related to search app when
+ unloading an app
+
+Make a change in qseecom_unload_app to stop the execution of app
+searching when an app is founded, even if this app is in use with
+ref_cnt greater than one.
+
+Change-Id: I0328252668ef1069ec514bfb913b927a7da76594
+Signed-off-by: Zhen Kong <zkong@codeaurora.org>
+Signed-off-by: William Clark <wclark@codeaurora.org>
+---
+ drivers/misc/qseecom.c | 10 ++--------
+ 1 file changed, 2 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/misc/qseecom.c b/drivers/misc/qseecom.c
+index b55ee8d..ff960cf 100644
+--- a/drivers/misc/qseecom.c
++++ b/drivers/misc/qseecom.c
+@@ -878,15 +878,9 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
+ 					(void *)data->client.app_name,
+ 					strlen(data->client.app_name))) {
+ 					found_app = true;
+-					if (app_crash) {
++					if (app_crash || ptr_app->ref_cnt == 1)
+ 						unload = true;
+-						break;
+-					} else {
+-						if (ptr_app->ref_cnt == 1) {
+-							unload = true;
+-							break;
+-						}
+-					}
++					break;
+ 				} else {
+ 					found_dead_app = true;
+ 					break;
