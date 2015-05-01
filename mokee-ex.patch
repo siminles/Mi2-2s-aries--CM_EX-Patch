@@ -100,19 +100,20 @@
  drivers/gpu/msm/Makefile                           |    2 +-
  drivers/gpu/msm/a2xx_reg.h                         |   22 +-
  drivers/gpu/msm/a3xx_reg.h                         |   70 -
- drivers/gpu/msm/adreno.c                           |   68 +-
+ drivers/gpu/msm/adreno.c                           |   92 +-
  drivers/gpu/msm/adreno.h                           |   73 +-
  drivers/gpu/msm/adreno_a2xx.c                      |   85 +-
  drivers/gpu/msm/adreno_a3xx.c                      |  325 +-
+ drivers/gpu/msm/adreno_a3xx_snapshot.c             |   18 +-
  drivers/gpu/msm/adreno_pm4types.h                  |    4 +-
  drivers/gpu/msm/adreno_ringbuffer.c                |   68 +-
- drivers/gpu/msm/kgsl.c                             |  316 +-
+ drivers/gpu/msm/kgsl.c                             |  310 +-
  drivers/gpu/msm/kgsl.h                             |   28 +-
  drivers/gpu/msm/kgsl_debugfs.c                     |  121 +-
- drivers/gpu/msm/kgsl_device.h                      |   57 +-
+ drivers/gpu/msm/kgsl_device.h                      |   58 +-
  drivers/gpu/msm/kgsl_iommu.c                       |   59 +-
  drivers/gpu/msm/kgsl_mmu.c                         |   89 +-
- drivers/gpu/msm/kgsl_pwrctrl.c                     |  142 +-
+ drivers/gpu/msm/kgsl_pwrctrl.c                     |  146 +-
  drivers/gpu/msm/kgsl_pwrscale_trustzone.c          |   10 +-
  drivers/gpu/msm/kgsl_sharedmem.c                   |   35 +-
  drivers/gpu/msm/kgsl_sharedmem.h                   |    5 +-
@@ -127,15 +128,17 @@
  drivers/misc/isa1200.c                             |   16 +-
  drivers/misc/qfp_fuse.c                            |   86 +-
  drivers/misc/qseecom.c                             |   29 +-
+ drivers/net/ethernet/msm/msm_rmnet_bam.c           |    9 +-
  drivers/net/usb/rmnet_usb_data.c                   |    5 +-
  drivers/net/wireless/wcnss/wcnss_wlan.c            |  252 +-
  drivers/power/pm8921-charger.c                     |    2 +-
+ drivers/staging/android/binder.c                   |   14 +-
  drivers/staging/prima/Makefile                     |    6 +-
+ drivers/tty/n_tty.c                                |    3 +
  drivers/tty/serial/msm_serial_hs.c                 |   14 +
  drivers/uio/uio.c                                  |   42 +-
  drivers/usb/gadget/ci13xxx_msm.c                   |    6 +
  drivers/usb/gadget/f_qdss.c                        |    4 +-
- drivers/usb/host/ehci-msm-hsic.c                   |    5 +
  drivers/video/au1100fb.c                           |   28 +-
  drivers/video/au1200fb.c                           |   26 +-
  drivers/video/msm/mdp.c                            |    4 +-
@@ -164,6 +167,7 @@
  include/net/transp_v6.h                            |    3 +
  kernel/events/core.c                               |   62 +-
  kernel/events/hw_breakpoint.c                      |    1 +
+ kernel/futex.c                                     |   25 +
  kernel/power/wakelock.c                            |   11 +-
  kernel/sched/core.c                                |   16 +-
  kernel/sched/fair.c                                |   24 +-
@@ -175,12 +179,13 @@
  lib/scatterlist.c                                  |    6 +-
  net/bluetooth/hci_conn.c                           |    2 +-
  net/bluetooth/hci_core.c                           |    2 +-
+ net/core/ethtool.c                                 |    4 +-
  net/ipv4/af_inet.c                                 |    2 +-
  net/ipv4/fib_trie.c                                |    2 +-
  net/ipv4/icmp.c                                    |    2 +-
  net/ipv4/netfilter/arp_tables.c                    |    5 +
  net/ipv4/netfilter/ip_tables.c                     |    5 +
- net/ipv4/ping.c                                    |  572 +-
+ net/ipv4/ping.c                                    |  587 +-
  net/ipv4/sysctl_net_ipv4.c                         |   23 +
  net/ipv4/sysfs_net_ipv4.c                          |    5 +
  net/ipv4/tcp.c                                     |   12 +-
@@ -201,7 +206,7 @@
  sound/soc/msm/qdsp6/q6adm.c                        |   30 +
  sound/soc/msm/qdsp6v2/q6asm.c                      |    8 +
  sound/usb/card.c                                   |    1 +
- 203 files changed, 5910 insertions(+), 21746 deletions(-)
+ 208 files changed, 5985 insertions(+), 21777 deletions(-)
 
 diff --git a/Documentation/csdio.txt b/Documentation/csdio.txt
 deleted file mode 100644
@@ -1345,7 +1350,7 @@ index 7d767c3..96933a3 100644
  		ARM_EXIT_KEEP(EXIT_DATA)
  	}
 diff --git a/arch/arm/lib/Makefile b/arch/arm/lib/Makefile
-index ab48fcf..e791649 100644
+index ab48fcf..ae3284a 100644
 --- a/arch/arm/lib/Makefile
 +++ b/arch/arm/lib/Makefile
 @@ -46,3 +46,9 @@ lib-$(CONFIG_ARCH_SHARK)	+= io-shark.o
@@ -23087,7 +23092,7 @@ index a6827fb..363b00f 100644
  		} else {
  			map.length = end - start;
 diff --git a/arch/arm/vfp/Makefile b/arch/arm/vfp/Makefile
-index a81404c..43e4e05 100644
+index a81404c..47686ea 100644
 --- a/arch/arm/vfp/Makefile
 +++ b/arch/arm/vfp/Makefile
 @@ -7,7 +7,7 @@
@@ -25768,7 +25773,7 @@ index f81fc67..21d4759 100644
 diff --git a/drivers/gpu/msm/adreno.c b/drivers/gpu/msm/adreno.c
 old mode 100755
 new mode 100644
-index d289137..580e90b
+index d289137..1298f7b
 --- a/drivers/gpu/msm/adreno.c
 +++ b/drivers/gpu/msm/adreno.c
 @@ -1,4 +1,4 @@
@@ -25777,6 +25782,15 @@ index d289137..580e90b
   *
   * This program is free software; you can redistribute it and/or modify
   * it under the terms of the GNU General Public License version 2 and
+@@ -137,7 +137,7 @@ static struct adreno_device device_3d0 = {
+ 
+ /* This set of registers are used for Hang detection
+  * If the values of these registers are same after
+- * KGSL_TIMEOUT_PART time, GPU hang is reported in
++ * KGSL_TIMEOUT_HANG_DETECT time, GPU hang is reported in
+  * kernel log.
+  * *****ALERT******ALERT********ALERT*************
+  * Order of registers below is important, registers
 @@ -292,7 +292,7 @@ static void adreno_perfcounter_start(struct adreno_device *adreno_dev)
   */
  
@@ -25815,6 +25829,15 @@ index d289137..580e90b
  		group = &(counters->groups[list[j].groupid]);
  
  		/* group/counter iterator */
+@@ -556,7 +557,7 @@ static irqreturn_t adreno_irq_handler(struct kgsl_device *device)
+ 	mod_timer_pending(&device->idle_timer,
+ 		jiffies + device->pwrctrl.interval_timeout);
+ 	mod_timer_pending(&device->hang_timer,
+-		(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++		(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 	return result;
+ }
+ 
 @@ -572,15 +573,13 @@ static void adreno_cleanup_pt(struct kgsl_device *device,
  
  	kgsl_mmu_unmap(pagetable, &device->memstore);
@@ -25928,6 +25951,60 @@ index d289137..580e90b
  	if (adreno_is_a2xx(adreno_dev)) {
  		/*
  		 * the MH_CLNT_INTF_CTRL_CONFIG registers aren't present
+@@ -1735,7 +1721,7 @@ static int adreno_start(struct kgsl_device *device)
+ 	}
+ 
+         mod_timer(&device->hang_timer,
+-		(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++		(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 
+ 	device->reset_counter++;
+ 
+@@ -2611,7 +2597,7 @@ adreno_dump_and_exec_ft(struct kgsl_device *device)
+ 			mod_timer(&device->idle_timer, jiffies + FIRST_TIMEOUT);
+ 			mod_timer(&device->hang_timer,
+ 				(jiffies +
+-				msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++				msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 		}
+ 		complete_all(&device->ft_gate);
+ 	}
+@@ -3031,7 +3017,7 @@ static int adreno_ringbuffer_drain(struct kgsl_device *device,
+ 	/*
+ 	 * The first time into the loop, wait for 100 msecs and kick wptr again
+ 	 * to ensure that the hardware has updated correctly.  After that, kick
+-	 * it periodically every KGSL_TIMEOUT_PART msecs until the timeout
++	 * it periodically every KGSL_TIMEOUT_HANG_DETECT msecs until the timeout
+ 	 * expires
+ 	 */
+ 
+@@ -3043,7 +3029,7 @@ static int adreno_ringbuffer_drain(struct kgsl_device *device,
+ 			if (adreno_ft_detect(device, regs))
+ 				return -ETIMEDOUT;
+ 
+-			wait = jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART);
++			wait = jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT);
+ 		}
+ 		GSL_RB_GET_READPTR(rb, &rb->rptr);
+ 
+@@ -3078,7 +3064,7 @@ retry:
+ 
+ 	/* now, wait for the GPU to finish its operations */
+ 	wait_time = jiffies + msecs_to_jiffies(ADRENO_IDLE_TIMEOUT);
+-	wait_time_part = jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART);
++	wait_time_part = jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT);
+ 
+ 	while (time_before(jiffies, wait_time)) {
+ 		if (adreno_isidle(device))
+@@ -3087,7 +3073,7 @@ retry:
+ 		/* Dont wait for timeout, detect hang faster.  */
+ 		if (time_after(jiffies, wait_time_part)) {
+ 			wait_time_part = jiffies +
+-				msecs_to_jiffies(KGSL_TIMEOUT_PART);
++				msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT);
+ 			if ((adreno_ft_detect(device, prev_reg_val)))
+ 				goto err;
+ 		}
 @@ -3098,7 +3084,7 @@ err:
  	KGSL_DRV_ERR(device, "spun too long waiting for RB to idle\n");
  	if (KGSL_STATE_DUMP_AND_FT != device->state &&
@@ -25947,7 +26024,27 @@ index d289137..580e90b
  	if (kgsl_gpuaddr_in_memdesc(&device->mmu.setstate_memory, gpuaddr,
  					size))
  		return &device->mmu.setstate_memory;
-@@ -3532,6 +3515,9 @@ unsigned int adreno_ft_detect(struct kgsl_device *device,
+@@ -3459,8 +3442,8 @@ unsigned int adreno_ft_detect(struct kgsl_device *device,
+ 	}
+ 
+ 	/*
+-	 * Time interval between hang detection should be KGSL_TIMEOUT_PART
+-	 * or more, if next hang detection is requested < KGSL_TIMEOUT_PART
++	 * Time interval between hang detection should be KGSL_TIMEOUT_HANG_DETECT
++	 * or more, if next hang detection is requested < KGSL_TIMEOUT_HANG_DETECT
+ 	 * from the last time do nothing.
+ 	 */
+ 	if ((next_hang_detect_time) &&
+@@ -3468,7 +3451,7 @@ unsigned int adreno_ft_detect(struct kgsl_device *device,
+ 			return 0;
+ 	else
+ 		next_hang_detect_time = (jiffies +
+-			msecs_to_jiffies(KGSL_TIMEOUT_PART-1));
++			msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT));
+ 
+ 	/* Read the current Hang detect reg values here */
+ 	for (i = 0; i < FT_DETECT_REGS_COUNT; i++) {
+@@ -3532,12 +3515,15 @@ unsigned int adreno_ft_detect(struct kgsl_device *device,
  				(kgsl_readtimestamp(device, context,
  				KGSL_TIMESTAMP_RETIRED) + 1),
  				curr_global_ts + 1);
@@ -25957,6 +26054,13 @@ index d289137..580e90b
  			return 1;
  		}
  
+ 		if (curr_context != NULL) {
+ 
+-			curr_context->ib_gpu_time_used += KGSL_TIMEOUT_PART;
++			curr_context->ib_gpu_time_used += KGSL_TIMEOUT_HANG_DETECT;
+ 			KGSL_FT_INFO(device,
+ 			"Proc %s used GPU Time %d ms on timestamp 0x%X\n",
+ 			curr_context->pid_name, curr_context->ib_gpu_time_used,
 @@ -3567,6 +3553,8 @@ unsigned int adreno_ft_detect(struct kgsl_device *device,
  						curr_context->ib_gpu_time_used =
  								0;
@@ -26622,6 +26726,41 @@ index af828df..9c1341d 100644
  
  	/* Turn on performance counters */
  	adreno_regwrite(device, A3XX_RBBM_PERFCTR_CTL, 0x01);
+diff --git a/drivers/gpu/msm/adreno_a3xx_snapshot.c b/drivers/gpu/msm/adreno_a3xx_snapshot.c
+old mode 100644
+new mode 100755
+index 34cac79..b939fa0
+--- a/drivers/gpu/msm/adreno_a3xx_snapshot.c
++++ b/drivers/gpu/msm/adreno_a3xx_snapshot.c
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2012,2014 The Linux Foundation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License version 2 and
+@@ -443,6 +443,22 @@ void *a3xx_snapshot(struct adreno_device *adreno_dev, void *snapshot,
+ 	/* Reading these will hang the GPU if it isn't already hung */
+ 
+ 	if (hang) {
++		unsigned int reg;
++
++		/*
++		 * Reading the microcode while the CP will is running will
++		 * basically basically move the CP instruction pointer to
++		 * whatever address we read. Big badaboom ensues. Stop the CP
++		 * (if it isn't already stopped) to ensure that we are safe.
++		 * We do this here and not earlier to avoid corrupting the RBBM
++		 * status and CP registers - by the time we get here we don't
++		 * care about the contents of the CP anymore.
++		 */
++
++		adreno_regread(device, REG_CP_ME_CNTL, &reg);
++		reg |= (1 << 27) | (1 << 28);
++		adreno_regwrite(device, REG_CP_ME_CNTL, reg);
++
+ 		snapshot = kgsl_snapshot_add_section(device,
+ 			KGSL_SNAPSHOT_SECTION_DEBUG, snapshot, remain,
+ 			a3xx_snapshot_cp_pfp_ram, NULL);
 diff --git a/drivers/gpu/msm/adreno_pm4types.h b/drivers/gpu/msm/adreno_pm4types.h
 index e6ec91d..a3fa312 100644
 --- a/drivers/gpu/msm/adreno_pm4types.h
@@ -26764,7 +26903,7 @@ index a384bfd..b46a995 100644
 diff --git a/drivers/gpu/msm/kgsl.c b/drivers/gpu/msm/kgsl.c
 old mode 100644
 new mode 100755
-index 3556d44..5898347
+index 3556d44..2ba05dc
 --- a/drivers/gpu/msm/kgsl.c
 +++ b/drivers/gpu/msm/kgsl.c
 @@ -1,4 +1,4 @@
@@ -26773,7 +26912,7 @@ index 3556d44..5898347
   *
   * This program is free software; you can redistribute it and/or modify
   * it under the terms of the GNU General Public License version 2 and
-@@ -56,6 +56,29 @@ static struct ion_client *kgsl_ion_client;
+@@ -56,11 +56,34 @@ static struct ion_client *kgsl_ion_client;
  
  static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry);
  
@@ -26803,7 +26942,29 @@ index 3556d44..5898347
  /**
   * kgsl_hang_check() - Check for GPU hang
   * data: KGSL device structure
-@@ -98,9 +121,13 @@ void hang_timer(unsigned long data)
+  *
+- * This function is called every KGSL_TIMEOUT_PART time when
++ * This function is called every KGSL_TIMEOUT_HANG_DETECT time when
+  * GPU is active to check for hang. If a hang is detected we
+  * trigger fault tolerance.
+  */
+@@ -79,7 +102,7 @@ void kgsl_hang_check(struct work_struct *work)
+ 			adreno_dump_and_exec_ft(device);
+ 
+ 		mod_timer(&device->hang_timer,
+-			(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++			(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 	}
+ 
+ 	mutex_unlock(&device->mutex);
+@@ -92,15 +115,19 @@ void kgsl_hang_check(struct work_struct *work)
+  * This function is called when hang timer expires, in this
+  * function we check if GPU is in active state and queue the
+  * work on device workqueue to check for the hang. We restart
+- * the timer after KGSL_TIMEOUT_PART time.
++ * the timer after KGSL_TIMEOUT_HANG_DETECT time.
+  */
+ void hang_timer(unsigned long data)
  {
  	struct kgsl_device *device = (struct kgsl_device *) data;
  
@@ -26857,23 +27018,19 @@ index 3556d44..5898347
  {
 -	struct kgsl_memfree_hist_elem *p;
 +	int ptr;
- 
--	void *base = kgsl_driver.memfree_hist.base_hist_rb;
--	int rbsize = kgsl_driver.memfree_hist.size;
++
 +	if (memfree.list == NULL)
 +		return 0;
  
+-	void *base = kgsl_driver.memfree_hist.base_hist_rb;
+-	int rbsize = kgsl_driver.memfree_hist.size;
++	spin_lock(&memfree_lock);
+ 
 -	if (base == NULL)
 -		return;
-+	spin_lock(&memfree_lock);
-+
 +	ptr = memfree.head - 1;
 +	if (ptr < 0)
 +		ptr = MEMFREE_ENTRIES - 1;
-+
-+	/* Walk backwards through the list looking for the last match  */
-+	while (ptr != memfree.tail) {
-+		struct memfree_entry *entry = &memfree.list[ptr];
  
 -	mutex_lock(&kgsl_driver.memfree_hist_mutex);
 -	p = kgsl_driver.memfree_hist.wptr;
@@ -26881,17 +27038,21 @@ index 3556d44..5898347
 -	p->gpuaddr = gpuaddr;
 -	p->size = size;
 -	p->flags = flags;
++	/* Walk backwards through the list looking for the last match  */
++	while (ptr != memfree.tail) {
++		struct memfree_entry *entry = &memfree.list[ptr];
+ 
+-	kgsl_driver.memfree_hist.wptr++;
+-	if ((void *)kgsl_driver.memfree_hist.wptr >= base+rbsize) {
+-		kgsl_driver.memfree_hist.wptr =
+-			(struct kgsl_memfree_hist_elem *)base;
 +		if ((entry->pid == pid) &&
 +			(*gpuaddr >= entry->gpuaddr &&
 +			 *gpuaddr < (entry->gpuaddr + entry->size))) {
 +			*gpuaddr = entry->gpuaddr;
 +			*flags = entry->flags;
 +			*size = entry->size;
- 
--	kgsl_driver.memfree_hist.wptr++;
--	if ((void *)kgsl_driver.memfree_hist.wptr >= base+rbsize) {
--		kgsl_driver.memfree_hist.wptr =
--			(struct kgsl_memfree_hist_elem *)base;
++
 +			spin_unlock(&memfree_lock);
 +			return 1;
 +		}
@@ -26935,7 +27096,7 @@ index 3556d44..5898347
  
  /* kgsl_get_mem_entry - get the mem_entry structure for the specified object
   * @device - Pointer to the device structure
-@@ -474,22 +534,26 @@ kgsl_create_context(struct kgsl_device_private *dev_priv)
+@@ -474,22 +534,15 @@ kgsl_create_context(struct kgsl_device_private *dev_priv)
  		KGSL_DRV_INFO(device, "cannot have more than %d "
  				"ctxts due to memstore limitation\n",
  				KGSL_MEMSTORE_MAX);
@@ -26948,30 +27109,19 @@ index 3556d44..5898347
  	}
  
  	kref_init(&context->refcount);
--	context->dev_priv = dev_priv;
-+	/*
-+	 * Get a refernce to the process private so its not destroyed, until
-+	 * the context is destroyed. This will also prevent the pagetable
-+	 * from being destroyed
-+	 */
-+	if (!kgsl_process_private_get(dev_priv->process_priv)) {
-+		ret = -EBADF;
-+		goto fail_free_id;
-+	}
- 
-+	context->dev_priv = dev_priv;
+ 	context->dev_priv = dev_priv;
+-
  	ret = kgsl_sync_timeline_create(context);
  	if (ret) {
 -		write_lock(&device->context_lock);
 -		idr_remove(&dev_priv->device->context_idr, id);
 -		write_unlock(&device->context_lock);
 -		goto func_end;
-+		kgsl_process_private_put(dev_priv->process_priv);
 +		goto fail_free_id;
  	}
  
  	/* Initialize the pending event list */
-@@ -506,6 +570,13 @@ kgsl_create_context(struct kgsl_device_private *dev_priv)
+@@ -506,6 +559,13 @@ kgsl_create_context(struct kgsl_device_private *dev_priv)
  
  	INIT_LIST_HEAD(&context->events_list);
  
@@ -26985,24 +27135,17 @@ index 3556d44..5898347
  func_end:
  	if (ret) {
  		kfree(context);
-@@ -552,8 +623,6 @@ kgsl_context_detach(struct kgsl_context *context)
+@@ -551,9 +611,7 @@ kgsl_context_detach(struct kgsl_context *context)
+ 	context->id = KGSL_CONTEXT_INVALID;
  	idr_remove(&device->context_idr, id);
  	write_unlock(&device->context_lock);
- 
--	context->dev_priv = NULL;
+-
+ 	context->dev_priv = NULL;
 -
  	kgsl_context_put(context);
  }
  
-@@ -563,6 +632,7 @@ kgsl_context_destroy(struct kref *kref)
- 	struct kgsl_context *context = container_of(kref, struct kgsl_context,
- 						    refcount);
- 	kgsl_sync_timeline_destroy(context);
-+	kgsl_process_private_put(context->dev_priv->process_priv);
- 	kfree(context);
- }
- 
-@@ -868,9 +938,8 @@ static void kgsl_destroy_process_private(struct kref *kref)
+@@ -868,9 +926,8 @@ static void kgsl_destroy_process_private(struct kref *kref)
  	return;
  }
  
@@ -27014,7 +27157,7 @@ index 3556d44..5898347
  {
  	mutex_lock(&kgsl_driver.process_mutex);
  
-@@ -884,14 +953,33 @@ kgsl_put_process_private(struct kgsl_device *device,
+@@ -884,14 +941,33 @@ kgsl_put_process_private(struct kgsl_device *device,
  	return;
  }
  
@@ -27054,7 +27197,7 @@ index 3556d44..5898347
  {
  	struct kgsl_process_private *private;
  
-@@ -899,18 +987,16 @@ kgsl_find_process_private(struct kgsl_device_private *cur_dev_priv)
+@@ -899,18 +975,16 @@ kgsl_find_process_private(struct kgsl_device_private *cur_dev_priv)
  	mutex_lock(&kgsl_driver.process_mutex);
  	list_for_each_entry(private, &kgsl_driver.process_list, list) {
  		if (private->pid == task_tgid_nr(current)) {
@@ -27076,7 +27219,7 @@ index 3556d44..5898347
  
  	kref_init(&private->refcount);
  
-@@ -932,11 +1018,11 @@ done:
+@@ -932,11 +1006,11 @@ done:
   * NULL if pagetable creation for this process private obj failed.
   */
  static struct kgsl_process_private *
@@ -27090,7 +27233,7 @@ index 3556d44..5898347
  
  	if (!private)
  		return NULL;
-@@ -953,26 +1039,31 @@ kgsl_get_process_private(struct kgsl_device_private *cur_dev_priv)
+@@ -953,26 +1027,31 @@ kgsl_get_process_private(struct kgsl_device_private *cur_dev_priv)
  		unsigned long pt_name;
  
  		pt_name = task_tgid_nr(current);
@@ -27132,7 +27275,7 @@ index 3556d44..5898347
  static int kgsl_release(struct inode *inodep, struct file *filep)
  {
  	int result = 0;
-@@ -1024,7 +1115,7 @@ static int kgsl_release(struct inode *inodep, struct file *filep)
+@@ -1024,7 +1103,7 @@ static int kgsl_release(struct inode *inodep, struct file *filep)
  	mutex_unlock(&device->mutex);
  	kfree(dev_priv);
  
@@ -27141,7 +27284,7 @@ index 3556d44..5898347
  
  	pm_runtime_put(device->parentdev);
  	return result;
-@@ -1096,7 +1187,7 @@ static int kgsl_open(struct inode *inodep, struct file *filep)
+@@ -1096,7 +1175,7 @@ static int kgsl_open(struct inode *inodep, struct file *filep)
  	 * after the first start so that the global pagetable mappings
  	 * are set up before we create the per-process pagetable.
  	 */
@@ -27150,7 +27293,7 @@ index 3556d44..5898347
  	if (dev_priv->process_priv ==  NULL) {
  		result = -ENOMEM;
  		goto err_stop;
-@@ -1156,7 +1247,8 @@ kgsl_sharedmem_find_region(struct kgsl_process_private *private,
+@@ -1156,7 +1235,8 @@ kgsl_sharedmem_find_region(struct kgsl_process_private *private,
  		entry = rb_entry(node, struct kgsl_mem_entry, node);
  
  		if (kgsl_gpuaddr_in_memdesc(&entry->memdesc, gpuaddr, size)) {
@@ -27160,7 +27303,7 @@ index 3556d44..5898347
  			spin_unlock(&private->mem_lock);
  			return entry;
  		}
-@@ -1256,14 +1348,17 @@ kgsl_sharedmem_region_empty(struct kgsl_process_private *private,
+@@ -1256,14 +1336,17 @@ kgsl_sharedmem_region_empty(struct kgsl_process_private *private,
  static inline struct kgsl_mem_entry * __must_check
  kgsl_sharedmem_find_id(struct kgsl_process_private *process, unsigned int id)
  {
@@ -27179,7 +27322,7 @@ index 3556d44..5898347
  	return entry;
  }
  
-@@ -1679,20 +1774,8 @@ static long kgsl_ioctl_drawctxt_destroy(struct kgsl_device_private *dev_priv,
+@@ -1679,20 +1762,8 @@ static long kgsl_ioctl_drawctxt_destroy(struct kgsl_device_private *dev_priv,
  	return result;
  }
  
@@ -27201,7 +27344,7 @@ index 3556d44..5898347
  	if (!kgsl_mem_entry_set_pend(entry)) {
  		kgsl_mem_entry_put(entry);
  		return -EBUSY;
-@@ -1700,10 +1783,8 @@ static long kgsl_ioctl_sharedmem_free(struct kgsl_device_private *dev_priv,
+@@ -1700,10 +1771,8 @@ static long kgsl_ioctl_sharedmem_free(struct kgsl_device_private *dev_priv,
  
  	trace_kgsl_mem_free(entry);
  
@@ -27214,7 +27357,7 @@ index 3556d44..5898347
  
  	/*
  	 * First kgsl_mem_entry_put is for the reference that we took in
-@@ -1712,9 +1793,27 @@ static long kgsl_ioctl_sharedmem_free(struct kgsl_device_private *dev_priv,
+@@ -1712,9 +1781,27 @@ static long kgsl_ioctl_sharedmem_free(struct kgsl_device_private *dev_priv,
  	 */
  	kgsl_mem_entry_put(entry);
  	kgsl_mem_entry_put(entry);
@@ -27242,7 +27385,7 @@ index 3556d44..5898347
  static long kgsl_ioctl_gpumem_free_id(struct kgsl_device_private *dev_priv,
  					unsigned int cmd, void *data)
  {
-@@ -1729,21 +1828,7 @@ static long kgsl_ioctl_gpumem_free_id(struct kgsl_device_private *dev_priv,
+@@ -1729,21 +1816,7 @@ static long kgsl_ioctl_gpumem_free_id(struct kgsl_device_private *dev_priv,
  		return -EINVAL;
  	}
  
@@ -27265,7 +27408,7 @@ index 3556d44..5898347
  }
  
  static struct vm_area_struct *kgsl_get_vma_from_start_addr(unsigned int addr)
-@@ -2853,7 +2938,8 @@ kgsl_mmap_memstore(struct kgsl_device *device, struct vm_area_struct *vma)
+@@ -2853,7 +2926,8 @@ kgsl_mmap_memstore(struct kgsl_device *device, struct vm_area_struct *vma)
  static void kgsl_gpumem_vm_open(struct vm_area_struct *vma)
  {
  	struct kgsl_mem_entry *entry = vma->vm_private_data;
@@ -27275,7 +27418,7 @@ index 3556d44..5898347
  }
  
  static int
-@@ -2861,6 +2947,8 @@ kgsl_gpumem_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+@@ -2861,6 +2935,8 @@ kgsl_gpumem_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
  {
  	struct kgsl_mem_entry *entry = vma->vm_private_data;
  
@@ -27284,7 +27427,7 @@ index 3556d44..5898347
  	if (!entry->memdesc.ops || !entry->memdesc.ops->vmfault)
  		return VM_FAULT_SIGBUS;
  
-@@ -2872,6 +2960,9 @@ kgsl_gpumem_vm_close(struct vm_area_struct *vma)
+@@ -2872,6 +2948,9 @@ kgsl_gpumem_vm_close(struct vm_area_struct *vma)
  {
  	struct kgsl_mem_entry *entry  = vma->vm_private_data;
  
@@ -27294,7 +27437,7 @@ index 3556d44..5898347
  	entry->memdesc.useraddr = 0;
  	kgsl_mem_entry_put(entry);
  }
-@@ -2925,7 +3016,7 @@ err_put:
+@@ -2925,7 +3004,7 @@ err_put:
  static inline bool
  mmap_range_valid(unsigned long addr, unsigned long len)
  {
@@ -27303,7 +27446,7 @@ index 3556d44..5898347
  }
  
  static unsigned long
-@@ -3155,8 +3246,6 @@ struct kgsl_driver kgsl_driver  = {
+@@ -3155,8 +3234,6 @@ struct kgsl_driver kgsl_driver  = {
  	.process_mutex = __MUTEX_INITIALIZER(kgsl_driver.process_mutex),
  	.ptlock = __SPIN_LOCK_UNLOCKED(kgsl_driver.ptlock),
  	.devlock = __MUTEX_INITIALIZER(kgsl_driver.devlock),
@@ -27312,7 +27455,7 @@ index 3556d44..5898347
  };
  EXPORT_SYMBOL(kgsl_driver);
  
-@@ -3476,7 +3565,7 @@ static void kgsl_core_exit(void)
+@@ -3476,7 +3553,7 @@ static void kgsl_core_exit(void)
  		kgsl_driver.class = NULL;
  	}
  
@@ -27321,7 +27464,7 @@ index 3556d44..5898347
  	unregister_chrdev_region(kgsl_driver.major, KGSL_DEVICE_MAX);
  }
  
-@@ -3548,8 +3637,7 @@ static int __init kgsl_core_init(void)
+@@ -3548,8 +3625,7 @@ static int __init kgsl_core_init(void)
  			goto err;
  	}
  
@@ -27576,7 +27719,7 @@ index a3f527f..3b20c23 100644
  
  void kgsl_core_debugfs_init(void)
 diff --git a/drivers/gpu/msm/kgsl_device.h b/drivers/gpu/msm/kgsl_device.h
-index b5d542d..4177581 100644
+index b5d542d..6013e7d 100644
 --- a/drivers/gpu/msm/kgsl_device.h
 +++ b/drivers/gpu/msm/kgsl_device.h
 @@ -1,4 +1,4 @@
@@ -27585,7 +27728,15 @@ index b5d542d..4177581 100644
   *
   * This program is free software; you can redistribute it and/or modify
   * it under the terms of the GNU General Public License version 2 and
-@@ -451,6 +451,9 @@ kgsl_device_get_drvdata(struct kgsl_device *dev)
+@@ -28,6 +28,7 @@
+ #define KGSL_TIMEOUT_DEFAULT        0xFFFFFFFF
+ #define KGSL_TIMEOUT_PART           50 /* 50 msec */
+ #define KGSL_TIMEOUT_LONG_IB_DETECTION  2000 /* 2 sec*/
++#define KGSL_TIMEOUT_HANG_DETECT	200	/* 200 msec */
+ 
+ #define FIRST_TIMEOUT (HZ / 2)
+ 
+@@ -451,6 +452,9 @@ kgsl_device_get_drvdata(struct kgsl_device *dev)
  
  void kgsl_context_destroy(struct kref *kref);
  
@@ -27595,7 +27746,7 @@ index b5d542d..4177581 100644
  /**
   * kgsl_context_put - Release context reference count
   * @context
-@@ -471,10 +474,12 @@ kgsl_context_put(struct kgsl_context *context)
+@@ -471,10 +475,12 @@ kgsl_context_put(struct kgsl_context *context)
   * lightweight way to just increase the refcount on a known context rather then
   * walking through kgsl_context_get and searching the iterator
   */
@@ -27610,7 +27761,7 @@ index b5d542d..4177581 100644
  }
  
  /**
-@@ -491,16 +496,19 @@ static inline void _kgsl_context_get(struct kgsl_context *context)
+@@ -491,16 +497,19 @@ static inline void _kgsl_context_get(struct kgsl_context *context)
  static inline struct kgsl_context *kgsl_context_get(struct kgsl_device *device,
  		uint32_t id)
  {
@@ -27631,7 +27782,7 @@ index b5d542d..4177581 100644
  	return context;
  }
  
-@@ -551,4 +559,45 @@ static inline void kgsl_cancel_events_timestamp(struct kgsl_device *device,
+@@ -551,4 +560,45 @@ static inline void kgsl_cancel_events_timestamp(struct kgsl_device *device,
  	kgsl_signal_event(device, context, timestamp, KGSL_EVENT_CANCELLED);
  }
  
@@ -27948,9 +28099,15 @@ index 60afe2e..6db7722 100644
  				mmu->setstate_memory.size);
  
 diff --git a/drivers/gpu/msm/kgsl_pwrctrl.c b/drivers/gpu/msm/kgsl_pwrctrl.c
-index 08ec847..c95f09f 100644
+index 08ec847..5ce6059 100644
 --- a/drivers/gpu/msm/kgsl_pwrctrl.c
 +++ b/drivers/gpu/msm/kgsl_pwrctrl.c
+@@ -1,4 +1,4 @@
+-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
++/* Copyright (c) 2010-2012,2014 The Linux Foundation. All rights reserved.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License version 2 and
 @@ -24,6 +24,7 @@
  #include "kgsl_device.h"
  #include "kgsl_trace.h"
@@ -28239,6 +28396,15 @@ index 08ec847..c95f09f 100644
  	buf[num_chars++] = '\n';
  	return num_chars;
  }
+@@ -1286,7 +1332,7 @@ int kgsl_pwrctrl_wake(struct kgsl_device *device)
+ 		mod_timer(&device->idle_timer,
+ 				jiffies + device->pwrctrl.interval_timeout);
+ 		mod_timer(&device->hang_timer,
+-			(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_PART)));
++			(jiffies + msecs_to_jiffies(KGSL_TIMEOUT_HANG_DETECT)));
+ 		pm_qos_update_request(&device->pm_qos_req_dma,
+ 					GPU_SWFI_LATENCY);
+ 	case KGSL_STATE_ACTIVE:
 diff --git a/drivers/gpu/msm/kgsl_pwrscale_trustzone.c b/drivers/gpu/msm/kgsl_pwrscale_trustzone.c
 index a647361..db9054b 100644
 --- a/drivers/gpu/msm/kgsl_pwrscale_trustzone.c
@@ -30299,6 +30465,47 @@ index 5ca3602..4510ab2 100644
  	send_cmd_req.cmd_req_buf = req.cmd_req_buf;
  	send_cmd_req.cmd_req_len = req.cmd_req_len;
  	send_cmd_req.resp_buf = req.resp_buf;
+diff --git a/drivers/net/ethernet/msm/msm_rmnet_bam.c b/drivers/net/ethernet/msm/msm_rmnet_bam.c
+index 83f486c..0966a4a 100644
+--- a/drivers/net/ethernet/msm/msm_rmnet_bam.c
++++ b/drivers/net/ethernet/msm/msm_rmnet_bam.c
+@@ -111,7 +111,8 @@ static ssize_t timeout_suspend_show(struct device *d,
+ 				    struct device_attribute *attr,
+ 				    char *buf)
+ {
+-	return sprintf(buf, "%lu\n", (unsigned long) timeout_suspend_us);
++	return snprintf(buf, PAGE_SIZE, "%lu\n",
++			(unsigned long) timeout_suspend_us);
+ }
+ 
+ static DEVICE_ATTR(timeout_suspend, 0664, timeout_suspend_show,
+@@ -170,7 +171,7 @@ static ssize_t wakeups_xmit_show(struct device *d,
+ 				 char *buf)
+ {
+ 	struct rmnet_private *p = netdev_priv(to_net_dev(d));
+-	return sprintf(buf, "%lu\n", p->wakeups_xmit);
++	return snprintf(buf, PAGE_SIZE, "%lu\n", p->wakeups_xmit);
+ }
+ 
+ DEVICE_ATTR(wakeups_xmit, 0444, wakeups_xmit_show, NULL);
+@@ -179,7 +180,7 @@ static ssize_t wakeups_rcv_show(struct device *d, struct device_attribute *attr,
+ 				char *buf)
+ {
+ 	struct rmnet_private *p = netdev_priv(to_net_dev(d));
+-	return sprintf(buf, "%lu\n", p->wakeups_rcv);
++	return snprintf(buf, PAGE_SIZE, "%lu\n", p->wakeups_rcv);
+ }
+ 
+ DEVICE_ATTR(wakeups_rcv, 0444, wakeups_rcv_show, NULL);
+@@ -203,7 +204,7 @@ static ssize_t timeout_show(struct device *d, struct device_attribute *attr,
+ {
+ 	struct rmnet_private *p = netdev_priv(to_net_dev(d));
+ 	p = netdev_priv(to_net_dev(d));
+-	return sprintf(buf, "%lu\n", timeout_us);
++	return snprintf(buf, PAGE_SIZE, "%lu\n", timeout_us);
+ }
+ 
+ DEVICE_ATTR(timeout, 0664, timeout_show, timeout_store);
 diff --git a/drivers/net/usb/rmnet_usb_data.c b/drivers/net/usb/rmnet_usb_data.c
 old mode 100755
 new mode 100644
@@ -30761,6 +30968,46 @@ index 579cf63..cbea3e3 100644
  				&& !the_chip->iusb_fine_res)
  			i--;
  		if (i < 0)
+diff --git a/drivers/staging/android/binder.c b/drivers/staging/android/binder.c
+index 82088c5..f4269ef 100644
+--- a/drivers/staging/android/binder.c
++++ b/drivers/staging/android/binder.c
+@@ -1406,6 +1406,7 @@ static void binder_transaction(struct binder_proc *proc,
+ 	struct binder_transaction *t;
+ 	struct binder_work *tcomplete;
+ 	size_t *offp, *off_end;
++	size_t off_min;
+ 	struct binder_proc *target_proc;
+ 	struct binder_thread *target_thread = NULL;
+ 	struct binder_node *target_node = NULL;
+@@ -1610,18 +1611,23 @@ static void binder_transaction(struct binder_proc *proc,
+ 		goto err_bad_offset;
+ 	}
+ 	off_end = (void *)offp + tr->offsets_size;
++	off_min = 0;
+ 	for (; offp < off_end; offp++) {
+ 		struct flat_binder_object *fp;
+ 		if (*offp > t->buffer->data_size - sizeof(*fp) ||
++		    *offp < off_min ||
+ 		    t->buffer->data_size < sizeof(*fp) ||
+-		    !IS_ALIGNED(*offp, sizeof(void *))) {
+-			binder_user_error("binder: %d:%d got transaction with "
+-				"invalid offset, %zd\n",
+-				proc->pid, thread->pid, *offp);
++		    !IS_ALIGNED(*offp, sizeof(u32))) {
++			binder_user_error("%d:%d got transaction with invalid offset, %lld (min %lld, max %lld)\n",
++					  proc->pid, thread->pid, (u64)*offp,
++					  (u64)off_min,
++					  (u64)(t->buffer->data_size -
++					  sizeof(*fp)));
+ 			return_error = BR_FAILED_REPLY;
+ 			goto err_bad_offset;
+ 		}
+ 		fp = (struct flat_binder_object *)(t->buffer->data + *offp);
++		off_min = *offp + sizeof(struct flat_binder_object);
+ 		switch (fp->type) {
+ 		case BINDER_TYPE_BINDER:
+ 		case BINDER_TYPE_WEAK_BINDER: {
 diff --git a/drivers/staging/prima/Makefile b/drivers/staging/prima/Makefile
 index 24c09a9..d6e24ac 100644
 --- a/drivers/staging/prima/Makefile
@@ -30786,6 +31033,22 @@ index 24c09a9..d6e24ac 100644
  CDEFINES += -DMSM_PLATFORM_7x30
  endif
  
+diff --git a/drivers/tty/n_tty.c b/drivers/tty/n_tty.c
+index 94b6eda..e0af885 100644
+--- a/drivers/tty/n_tty.c
++++ b/drivers/tty/n_tty.c
+@@ -1986,8 +1986,11 @@ static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
+ 			if (tty->ops->flush_chars)
+ 				tty->ops->flush_chars(tty);
+ 		} else {
++
+ 			while (nr > 0) {
++				mutex_lock(&tty->output_lock);
+ 				c = tty->ops->write(tty, b, nr);
++				mutex_unlock(&tty->output_lock);
+ 				if (c < 0) {
+ 					retval = c;
+ 					goto break_out;
 diff --git a/drivers/tty/serial/msm_serial_hs.c b/drivers/tty/serial/msm_serial_hs.c
 index 7639174..9dca42e 100644
 --- a/drivers/tty/serial/msm_serial_hs.c
@@ -32709,6 +32972,56 @@ index bb38c4d..98e6903 100644
  };
  
  int __init init_hw_breakpoint(void)
+diff --git a/kernel/futex.c b/kernel/futex.c
+index ed5d0fc..aec8407 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -1257,6 +1257,13 @@ static int futex_requeue(u32 __user *uaddr1, unsigned int flags,
+ 
+ 	if (requeue_pi) {
+ 		/*
++		 * Requeue PI only works on two distinct uaddrs. This
++		 * check is only valid for private futexes. See below.
++		 */
++		if (uaddr1 == uaddr2)
++			return -EINVAL;
++
++		/*
+ 		 * requeue_pi requires a pi_state, try to allocate it now
+ 		 * without any locks in case it fails.
+ 		 */
+@@ -1294,6 +1301,15 @@ retry:
+ 	if (unlikely(ret != 0))
+ 		goto out_put_key1;
+ 
++	/*
++	 * The check above which compares uaddrs is not sufficient for
++	 * shared futexes. We need to compare the keys:
++	 */
++	if (requeue_pi && match_futex(&key1, &key2)) {
++		ret = -EINVAL;
++		goto out_put_keys;
++	}
++
+ 	hb1 = hash_futex(&key1);
+ 	hb2 = hash_futex(&key2);
+ 
+@@ -2309,6 +2325,15 @@ static int futex_wait_requeue_pi(u32 __user *uaddr, unsigned int flags,
+ 	if (ret)
+ 		goto out_key2;
+ 
++	/*
++	 * The check above which compares uaddrs is not sufficient for
++	 * shared futexes. We need to compare the keys:
++	 */
++	if (match_futex(&q.key, &key2)) {
++		ret = -EINVAL;
++		goto out_put_keys;
++	}
++
+ 	/* Queue the futex_q, drop the hb lock, wait for wakeup. */
+ 	futex_wait_queue_me(hb, &q, to);
+ 
 diff --git a/kernel/power/wakelock.c b/kernel/power/wakelock.c
 index 2583856..0db39b8 100644
 --- a/kernel/power/wakelock.c
@@ -33016,6 +33329,25 @@ index 35327bd..3f6526b 100644
  	hdev->id = id;
  	list_add(&hdev->list, head);
  
+diff --git a/net/core/ethtool.c b/net/core/ethtool.c
+index 6d6d7d2..452fa86 100644
+--- a/net/core/ethtool.c
++++ b/net/core/ethtool.c
+@@ -691,11 +691,13 @@ static int ethtool_reset(struct net_device *dev, char __user *useraddr)
+ 
+ static int ethtool_get_wol(struct net_device *dev, char __user *useraddr)
+ {
+-	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
++	struct ethtool_wolinfo wol;
+ 
+ 	if (!dev->ethtool_ops->get_wol)
+ 		return -EOPNOTSUPP;
+ 
++	memset(&wol, 0, sizeof(struct ethtool_wolinfo));
++	wol.cmd = ETHTOOL_GWOL;
+ 	dev->ethtool_ops->get_wol(dev, &wol);
+ 
+ 	if (copy_to_user(useraddr, &wol, sizeof(wol)))
 diff --git a/net/ipv4/af_inet.c b/net/ipv4/af_inet.c
 index 0b71165..425f36d 100644
 --- a/net/ipv4/af_inet.c
@@ -33088,7 +33420,7 @@ index 24e556e..ed1468a 100644
  	jumpstack  = (struct ipt_entry **)private->jumpstack[cpu];
  	stackptr   = per_cpu_ptr(private->stackptr, cpu);
 diff --git a/net/ipv4/ping.c b/net/ipv4/ping.c
-index 50009c7..6241358 100644
+index 50009c7..46b8ad8 100644
 --- a/net/ipv4/ping.c
 +++ b/net/ipv4/ping.c
 @@ -33,7 +33,6 @@
@@ -33242,7 +33574,7 @@ index 50009c7..6241358 100644
  		if (sk->sk_bound_dev_if && sk->sk_bound_dev_if != dif)
  			continue;
  
-@@ -198,7 +243,7 @@ static void inet_get_ping_group_range_net(struct net *net, gid_t *low,
+@@ -198,34 +243,42 @@ static void inet_get_ping_group_range_net(struct net *net, gid_t *low,
  }
  
  
@@ -33251,9 +33583,38 @@ index 50009c7..6241358 100644
  {
  	struct net *net = sock_net(sk);
  	gid_t group = current_egid();
-@@ -224,8 +269,9 @@ static int ping_init_sock(struct sock *sk)
+ 	gid_t range[2];
+-	struct group_info *group_info = get_current_groups();
+-	int i, j, count = group_info->ngroups;
++	struct group_info *group_info;
++	int i, j, count  ;
++        int ret = 0;
  
- 	return -EACCES;
+ 	inet_get_ping_group_range_net(net, range, range+1);
+ 	if (range[0] <= group && group <= range[1])
+ 		return 0;
+ 
++	group_info = get_current_groups();
++	count = group_info->ngroups;
+ 	for (i = 0; i < group_info->nblocks; i++) {
+ 		int cp_count = min_t(int, NGROUPS_PER_BLOCK, count);
+ 
+ 		for (j = 0; j < cp_count; j++) {
+ 			group = group_info->blocks[i][j];
+ 			if (range[0] <= group && group <= range[1])
+-				return 0;
++				goto out_release_group;
+ 		}
+ 
+ 		count -= cp_count;
+ 	}
+ 
+-	return -EACCES;
++	ret = -EACCES;
++
++out_release_group:
++	put_group_info(group_info);
++	return ret;
  }
 +EXPORT_SYMBOL_GPL(ping_init_sock);
  
@@ -33262,7 +33623,7 @@ index 50009c7..6241358 100644
  {
  	pr_debug("ping_close(sk=%p,sk->num=%u)\n",
  		 inet_sk(sk), inet_sk(sk)->inet_num);
-@@ -233,36 +279,122 @@ static void ping_close(struct sock *sk, long timeout)
+@@ -233,36 +286,122 @@ static void ping_close(struct sock *sk, long timeout)
  
  	sk_common_release(sk);
  }
@@ -33283,7 +33644,7 @@ index 50009c7..6241358 100644
 +			 sk, &addr->sin_addr.s_addr, ntohs(addr->sin_port));
 +
 +		chk_addr_ret = inet_addr_type(net, addr->sin_addr.s_addr);
-+
+ 
 +		if (addr->sin_addr.s_addr == htonl(INADDR_ANY))
 +			chk_addr_ret = RTN_LOCAL;
 +
@@ -33337,7 +33698,7 @@ index 50009c7..6241358 100644
 +	}
 +	return 0;
 +}
- 
++
 +void ping_set_saddr(struct sock *sk, struct sockaddr *saddr)
 +{
 +	if (saddr->sa_family == AF_INET) {
@@ -33404,7 +33765,7 @@ index 50009c7..6241358 100644
  
  	lock_sock(sk);
  
-@@ -271,42 +403,50 @@ static int ping_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
+@@ -271,42 +410,50 @@ static int ping_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
  		goto out;
  
  	err = -EADDRINUSE;
@@ -33466,7 +33827,7 @@ index 50009c7..6241358 100644
  }
  
  /*
-@@ -314,30 +454,44 @@ static inline int ping_supported(int type, int code)
+@@ -314,30 +461,44 @@ static inline int ping_supported(int type, int code)
   * sort of error condition.
   */
  
@@ -33523,7 +33884,7 @@ index 50009c7..6241358 100644
  	if (sk == NULL) {
  		pr_debug("no socket, dropping\n");
  		return;	/* No socket for error */
-@@ -348,70 +502,85 @@ void ping_err(struct sk_buff *skb, u32 info)
+@@ -348,70 +509,85 @@ void ping_err(struct sk_buff *skb, u32 info)
  	harderr = 0;
  	inet_sock = inet_sk(sk);
  
@@ -33652,7 +34013,7 @@ index 50009c7..6241358 100644
  {
  	struct pingfakehdr *pfh = (struct pingfakehdr *)from;
  
-@@ -422,20 +591,33 @@ static int ping_getfrag(void *from, char * to,
+@@ -422,20 +598,33 @@ static int ping_getfrag(void *from, char * to,
  			    pfh->iov, 0, fraglen - sizeof(struct icmphdr),
  			    &pfh->wcheck))
  			return -EFAULT;
@@ -33695,7 +34056,7 @@ index 50009c7..6241358 100644
  {
  	struct sk_buff *skb = skb_peek(&sk->sk_write_queue);
  
-@@ -447,24 +629,9 @@ static int ping_push_pending_frames(struct sock *sk, struct pingfakehdr *pfh,
+@@ -447,24 +636,9 @@ static int ping_push_pending_frames(struct sock *sk, struct pingfakehdr *pfh,
  	return ip_push_pending_frames(sk, fl4);
  }
  
@@ -33723,7 +34084,7 @@ index 50009c7..6241358 100644
  
  	if (len > 0xFFFF)
  		return -EMSGSIZE;
-@@ -479,15 +646,53 @@ static int ping_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+@@ -479,15 +653,53 @@ static int ping_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
  
  	/*
  	 *	Fetch the ICMP header provided by the userland.
@@ -33782,7 +34143,7 @@ index 50009c7..6241358 100644
  	/*
  	 *	Get and verify the address.
  	 */
-@@ -593,13 +798,14 @@ back_from_confirm:
+@@ -593,13 +805,14 @@ back_from_confirm:
  	pfh.icmph.un.echo.sequence = user_icmph.un.echo.sequence;
  	pfh.iov = msg->msg_iov;
  	pfh.wcheck = 0;
@@ -33798,7 +34159,7 @@ index 50009c7..6241358 100644
  	release_sock(sk);
  
  out:
-@@ -620,11 +826,13 @@ do_confirm:
+@@ -620,11 +833,13 @@ do_confirm:
  	goto out;
  }
  
@@ -33815,7 +34176,7 @@ index 50009c7..6241358 100644
  	struct sk_buff *skb;
  	int copied, err;
  
-@@ -634,11 +842,22 @@ static int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+@@ -634,11 +849,22 @@ static int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
  	if (flags & MSG_OOB)
  		goto out;
  
@@ -33842,7 +34203,7 @@ index 50009c7..6241358 100644
  
  	skb = skb_recv_datagram(sk, flags, noblock, &err);
  	if (!skb)
-@@ -657,15 +876,45 @@ static int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+@@ -657,15 +883,45 @@ static int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
  
  	sock_recv_timestamp(msg, sk, skb);
  
@@ -33896,7 +34257,7 @@ index 50009c7..6241358 100644
  	err = copied;
  
  done:
-@@ -674,8 +923,9 @@ out:
+@@ -674,8 +930,9 @@ out:
  	pr_debug("ping_recvmsg -> %d\n", err);
  	return err;
  }
@@ -33907,7 +34268,7 @@ index 50009c7..6241358 100644
  {
  	pr_debug("ping_queue_rcv_skb(sk=%p,sk->num=%d,skb=%p)\n",
  		 inet_sk(sk), inet_sk(sk)->inet_num, skb);
-@@ -686,6 +936,7 @@ static int ping_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
+@@ -686,6 +943,7 @@ static int ping_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
  	}
  	return 0;
  }
@@ -33915,7 +34276,7 @@ index 50009c7..6241358 100644
  
  
  /*
-@@ -696,10 +947,7 @@ void ping_rcv(struct sk_buff *skb)
+@@ -696,10 +954,7 @@ void ping_rcv(struct sk_buff *skb)
  {
  	struct sock *sk;
  	struct net *net = dev_net(skb->dev);
@@ -33926,7 +34287,7 @@ index 50009c7..6241358 100644
  
  	/* We assume the packet has already been checked by icmp_rcv */
  
-@@ -709,8 +957,7 @@ void ping_rcv(struct sk_buff *skb)
+@@ -709,8 +964,7 @@ void ping_rcv(struct sk_buff *skb)
  	/* Push ICMP header back */
  	skb_push(skb, skb->data - (u8 *)icmph);
  
@@ -33936,7 +34297,7 @@ index 50009c7..6241358 100644
  	if (sk != NULL) {
  		pr_debug("rcv on socket %p\n", sk);
  		ping_queue_rcv_skb(sk, skb_get(skb));
-@@ -721,6 +968,7 @@ void ping_rcv(struct sk_buff *skb)
+@@ -721,6 +975,7 @@ void ping_rcv(struct sk_buff *skb)
  
  	/* We're called from icmp_rcv(). kfree_skb() is done there. */
  }
@@ -33944,7 +34305,7 @@ index 50009c7..6241358 100644
  
  struct proto ping_prot = {
  	.name =		"PING",
-@@ -731,13 +979,13 @@ struct proto ping_prot = {
+@@ -731,13 +986,13 @@ struct proto ping_prot = {
  	.disconnect =	udp_disconnect,
  	.setsockopt =	ip_setsockopt,
  	.getsockopt =	ip_getsockopt,
