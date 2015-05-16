@@ -1,0 +1,2824 @@
+ Makefile                                  |   4 +-
+ arch/arm/Makefile                         |   1 +
+ arch/arm/configs/aries-perf-usr_defconfig | 140 +++++++-
+ arch/arm/mach-msm/Kconfig                 |  18 +
+ arch/arm/mach-msm/Makefile                |   2 +
+ arch/arm/mach-msm/acpuclock-8064.c        | 337 +++++++++---------
+ arch/arm/mach-msm/acpuclock-krait.c       |  49 +++
+ arch/arm/mach-msm/board-8064-regulator.c  |  10 +-
+ arch/arm/mach-msm/board-aries-gpu.c       |  23 +-
+ arch/arm/mach-msm/board-aries-regulator.c |  10 +-
+ arch/arm/mach-msm/board-aries.c           |   2 +-
+ arch/arm/mach-msm/clock-8960.c            |  81 ++++-
+ arch/arm/mach-msm/clock-pll.c             |  37 ++
+ arch/arm/mach-msm/cpufreq.c               |  79 +++++
+ arch/arm/mach-msm/include/mach/kgsl.h     |   2 +
+ arch/arm/vfp/Makefile                     |   2 +-
+ drivers/cpufreq/Kconfig                   |  26 ++
+ drivers/cpufreq/Makefile                  |   1 +
+ drivers/cpufreq/cpufreq.c                 | 321 +++++++++++++-----
+ drivers/cpufreq/cpufreq_stats.c           |   4 +-
+ drivers/gpu/ion/Makefile                  |   1 +
+ drivers/gpu/ion/msm/Makefile              |   1 +
+ drivers/gpu/msm/Makefile                  |   2 +-
+ drivers/gpu/msm/kgsl_pwrctrl.c            |  69 +++-
+ drivers/input/touchscreen/Kconfig         |   6 +
+ drivers/input/touchscreen/atmel_mxt_ts.c  | 544 +++++++++++++++++++++++++++++-
+ drivers/staging/prima/Makefile            |   6 +-
+ include/linux/cpufreq.h                   |  11 +-
+ 28 files changed, 1507 insertions(+), 282 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index a687963..53e4e3b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -370,10 +370,10 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
+ 		   -Wno-format-security \
+ 		   -fno-delete-null-pointer-checks
+ KBUILD_AFLAGS_KERNEL :=
+-KBUILD_CFLAGS_KERNEL :=
++KBUILD_CFLAGS_KERNEL := -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ KBUILD_AFLAGS   := -D__ASSEMBLY__
+ KBUILD_AFLAGS_MODULE  := -DMODULE
+-KBUILD_CFLAGS_MODULE  := -DMODULE
++KBUILD_CFLAGS_MODULE  := -DMODULE -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
+ 
+ # Read KERNELRELEASE from include/config/kernel.release (if it exists)
+diff --git a/arch/arm/Makefile b/arch/arm/Makefile
+index d9f4657..4283596 100644
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -68,6 +68,7 @@ arch-$(CONFIG_CPU_32v5)		:=-D__LINUX_ARM_ARCH__=5 $(call cc-option,-march=armv5t
+ arch-$(CONFIG_CPU_32v4T)	:=-D__LINUX_ARM_ARCH__=4 -march=armv4t
+ arch-$(CONFIG_CPU_32v4)		:=-D__LINUX_ARM_ARCH__=4 -march=armv4
+ arch-$(CONFIG_CPU_32v3)		:=-D__LINUX_ARM_ARCH__=3 -march=armv3
++arch-$(CONFIG_ARCH_MSM_KRAIT)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a15,-march=armv7-a,-mfpu=neon-vfpv4)
+ 
+ # This selects how we optimise for the processor.
+ tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
+diff --git a/arch/arm/configs/aries-perf-usr_defconfig b/arch/arm/configs/aries-perf-usr_defconfig
+old mode 100644
+new mode 100755
+index 5d3d71a..dd2fcfc
+--- a/arch/arm/configs/aries-perf-usr_defconfig
++++ b/arch/arm/configs/aries-perf-usr_defconfig
+@@ -18,7 +18,7 @@ CONFIG_NAMESPACES=y
+ CONFIG_BLK_DEV_INITRD=y
+ CONFIG_RD_BZIP2=y
+ CONFIG_RD_LZMA=y
+-CONFIG_CC_OPTIMIZE_FOR_SIZE=y
++# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
+ CONFIG_PANIC_TIMEOUT=5
+ CONFIG_ASHMEM=y
+ CONFIG_EMBEDDED=y
+@@ -30,12 +30,30 @@ CONFIG_MODULE_FORCE_UNLOAD=y
+ CONFIG_MODVERSIONS=y
+ CONFIG_PARTITION_ADVANCED=y
+ CONFIG_EFI_PARTITION=y
++
++#
++# IO Schedulers
++#
++CONFIG_IOSCHED_NOOP=y
+ # CONFIG_IOSCHED_TEST is not set
++CONFIG_IOSCHED_DEADLINE=y
++CONFIG_IOSCHED_ROW=y
++CONFIG_IOSCHED_CFQ=y
++# CONFIG_DEFAULT_DEADLINE is not set
++CONFIG_DEFAULT_ROW=y
++# CONFIG_DEFAULT_CFQ is not set
++# CONFIG_DEFAULT_NOOP is not set
++CONFIG_DEFAULT_IOSCHED="row"
++
++CONFIG_MMU=y
+ CONFIG_ARCH_MSM=y
+ CONFIG_ARCH_MSM8960=y
+-CONFIG_ARCH_MSM8930=y
++# CONFIG_ARCH_MSM8930 is not set
+ CONFIG_ARCH_APQ8064=y
+ CONFIG_MSM_KRAIT_TBB_ABORT_HANDLER=y
++CONFIG_ARCH_MSM_KRAIT=y
++CONFIG_MSM_SMP=y
++CONFIG_ARCH_MSM_KRAITMP=y
+ CONFIG_MACH_APQ8064_MTP=y
+ CONFIG_MACH_MITWO=y
+ # CONFIG_MSM_STACKED_MEMORY is not set
+@@ -69,26 +87,36 @@ CONFIG_MSM_TZ_LOG=y
+ CONFIG_MSM_RPM_LOG=y
+ CONFIG_MSM_RPM_STATS_LOG=y
+ CONFIG_MSM_RPM_RBCPR_STATS_LOG=y
++CONFIG_IOMMU_API=y
+ CONFIG_MSM_BUS_SCALING=y
+ CONFIG_MSM_BUS_RPM_MULTI_TIER_ENABLED=y
+ CONFIG_MSM_WATCHDOG=y
+ CONFIG_MSM_DLOAD_MODE=y
++CONFIG_MSM_QDSP6_CODECS=y
++CONFIG_MSM_AUDIO_QDSP6=y
+ CONFIG_MSM_JTAG=y
+-CONFIG_MSM_EBI_ERP=y
++CONFIG_MSM_MULTIMEDIA_USE_ION=y
++# CONFIG_MSM_EBI_ERP is not set
+ CONFIG_MSM_CACHE_ERP=y
+ CONFIG_MSM_L1_ERR_PANIC=y
+-CONFIG_MSM_L1_RECOV_ERR_PANIC=y
+-CONFIG_MSM_L1_ERR_LOG=y
+-CONFIG_MSM_L2_ERP_PRINT_ACCESS_ERRORS=y
+-CONFIG_MSM_L2_ERP_1BIT_PANIC=y
++# CONFIG_MSM_L1_RECOV_ERR_PANIC is not set
++# CONFIG_MSM_L1_ERR_LOG is not set
++# CONFIG_MSM_L2_ERP_PRINT_ACCESS_ERRORS is not set
++# CONFIG_MSM_L2_ERP_1BIT_PANIC is not set
+ CONFIG_MSM_L2_ERP_2BIT_PANIC=y
+ CONFIG_MSM_DCVS=y
+ CONFIG_MSM_CACHE_DUMP=y
+ CONFIG_MSM_CACHE_DUMP_ON_PANIC=y
+ CONFIG_MSM_HSIC_SYSMON=y
++CONFIG_ARM_THUMB=y
++CONFIG_ARM_L1_CACHE_SHIFT_6=y
++CONFIG_ARM_L1_CACHE_SHIFT=6
++CONFIG_ARM_DMA_MEM_BUFFERABLE=y
+ CONFIG_STRICT_MEMORY_RWX=y
+ CONFIG_NO_HZ=y
+ CONFIG_HIGH_RES_TIMERS=y
++CONFIG_GENERIC_CLOCKEVENTS_BUILD=y
++CONFIG_HAVE_SMP=y
+ CONFIG_SMP=y
+ # UART
+ CONFIG_MSM_UART_HS_USE_HS=y
+@@ -110,6 +138,7 @@ CONFIG_CPU_FREQ_GOV_USERSPACE=y
+ CONFIG_CPU_FREQ_GOV_ONDEMAND=y
+ CONFIG_CPU_IDLE=y
+ CONFIG_VFP=y
++CONFIG_VFPv3=y
+ CONFIG_NEON=y
+ # CONFIG_CORE_DUMP_DEFAULT_ELF_HEADERS is not set
+ CONFIG_WAKELOCK=y
+@@ -247,6 +276,7 @@ CONFIG_BT_HCISMD=y
+ CONFIG_CFG80211=y
+ # CONFIG_CFG80211_WEXT is not set
+ CONFIG_RFKILL=y
++CONFIG_DMA_SHARED_BUFFER=y
+ CONFIG_GENLOCK=y
+ CONFIG_GENLOCK_MISCDEVICE=y
+ CONFIG_SYNC=y
+@@ -331,6 +361,8 @@ CONFIG_RMI4_DEV=y
+ CONFIG_N_SMUX=y
+ CONFIG_N_SMUX_LOOPBACK=y
+ CONFIG_SMUX_CTL=y
++CONFIG_DEVMEM=y
++CONFIG_DEVKMEM=y
+ CONFIG_SERIAL_MSM_HS=y
+ CONFIG_SERIAL_MSM_HSL=y
+ CONFIG_DIAG_CHAR=y
+@@ -369,6 +401,7 @@ CONFIG_REGULATOR_MSM_GPIO=y
+ CONFIG_MEDIA_SUPPORT=y
+ CONFIG_MEDIA_CONTROLLER=y
+ CONFIG_VIDEO_DEV=y
++CONFIG_VIDEO_V4L2_COMMON=y
+ CONFIG_VIDEO_V4L2_SUBDEV_API=y
+ CONFIG_MSM_WFD=y
+ CONFIG_USER_RC_INPUT=y
+@@ -392,13 +425,30 @@ CONFIG_IMX074_EEPROM=y
+ CONFIG_IMX091_EEPROM=y
+ CONFIG_MSM_GEMINI=y
+ CONFIG_QUP_EXCLUSIVE_TO_CAMERA=y
++CONFIG_VIDEO_V4L2=y
++CONFIG_VIDEOBUF2_CORE=y
+ CONFIG_MSM_VIDC=y
++CONFIG_VIDEOBUF2_MEMOPS=y
++CONFIG_VIDEOBUF2_DMA_CONTIG=y
++CONFIG_VIDEOBUF2_VMALLOC=y
++CONFIG_VIDEOBUF2_DMA_SG=y
++CONFIG_VIDEOBUF2_MSM_MEM=y
++CONFIG_VIDEO_CAPTURE_DRIVERS=y
++# CONFIG_VIDEO_ADV_DEBUG is not set
++# CONFIG_VIDEO_FIXED_MINOR_RANGES is not set
++CONFIG_VIDEO_HELPER_CHIPS_AUTO=y
++CONFIG_V4L_PLATFORM_DRIVERS=y
+ # CONFIG_MSM_VIDC_V4L2 is not set
++
+ CONFIG_RADIO_ADAPTERS=y
+ # CONFIG_MSM_MERCURY is not set
+ CONFIG_MSM_CSI20_HEADER=y
+ CONFIG_RADIO_IRIS=y
+ CONFIG_RADIO_IRIS_TRANSPORT=m
++#
++# Graphics support
++#
++# CONFIG_DRM is not set
+ CONFIG_ION=y
+ CONFIG_ION_MSM=y
+ CONFIG_MSM_KGSL=y
+@@ -406,9 +456,19 @@ CONFIG_KGSL_PER_PROCESS_PAGE_TABLE=y
+ CONFIG_MSM_KGSL_PAGE_TABLE_COUNT=24
+ CONFIG_FB=y
+ CONFIG_FB_VIRTUAL=y
++# CONFIG_FB_METRONOME is not set
++# CONFIG_FB_BROADSHEET is not set
++CONFIG_MSM_VIDC=y
++CONFIG_MSM_VIDC_1080P=y
++CONFIG_MSM_VIDC_VENC=y
++CONFIG_MSM_VIDC_VDEC=y
++# CONFIG_MSM_VIDC_CONTENT_PROTECTION is not set
+ CONFIG_FB_MSM=y
+ # CONFIG_FB_MSM_BACKLIGHT is not set
+ CONFIG_FB_MSM_TRIPLE_BUFFER=y
++# CONFIG_FB_MSM_MDP22 is not set
++# CONFIG_FB_MSM_MDP30 is not set
++# CONFIG_FB_MSM_MDP31 is not set
+ CONFIG_FB_MSM_MDP40=y
+ CONFIG_FB_MSM_MIPI_DSI_CABC=y
+ CONFIG_FB_MSM_OVERLAY=y
+@@ -437,7 +497,17 @@ CONFIG_SND=y
+ CONFIG_SND_DYNAMIC_MINORS=y
+ CONFIG_SND_USB_AUDIO=y
+ CONFIG_SND_SOC=y
++#
++# MSM SoC Audio support
++#
++CONFIG_SND_SOC_MSM_HOSTLESS_PCM=y
++CONFIG_SND_SOC_MSM_QDSP6_HDMI_AUDIO=y
++CONFIG_SND_SOC_MSM_QDSP6_INTF=y
++CONFIG_SND_SOC_VOICE=y
++CONFIG_SND_SOC_QDSP6=y
+ CONFIG_SND_SOC_MSM8960=y
++CONFIG_SND_SOC_I2C_AND_SPI=y
++CONFIG_SND_SOC_WCD9310=y
+ # CONFIG_UHID is not set
+ CONFIG_HID_A4TECH=y
+ CONFIG_HID_ACRUX=y
+@@ -494,7 +564,7 @@ CONFIG_USB_EHCI_HCD=y
+ CONFIG_USB_EHCI_EHSET=y
+ CONFIG_USB_EHCI_MSM=y
+ CONFIG_USB_EHCI_MSM_HSIC=y
+-CONFIG_USB_EHCI_MSM_HOST4=y
++# CONFIG_USB_EHCI_MSM_HOST4 is not set
+ CONFIG_USB_ACM=y
+ CONFIG_USB_STORAGE=y
+ CONFIG_USB_STORAGE_DEBUG=y
+@@ -527,7 +597,7 @@ CONFIG_MMC_CLKGATE=y
+ CONFIG_MMC_PARANOID_SD_INIT=y
+ CONFIG_MMC_BLOCK_MINORS=32
+ # CONFIG_MMC_BLOCK_BOUNCE is not set
+-CONFIG_MMC_TEST=m
++# CONFIG_MMC_TEST is not set
+ CONFIG_MMC_MSM=y
+ CONFIG_MMC_MSM_SDC1_8_BIT_SUPPORT=y
+ # CONFIG_MMC_MSM_SDC2_SUPPORT is not set
+@@ -544,8 +614,12 @@ CONFIG_RTC_DRV_PM8XXX=y
+ CONFIG_STAGING=y
+ CONFIG_ANDROID=y
+ CONFIG_ANDROID_BINDER_IPC=y
++CONFIG_ASHMEM=y
+ CONFIG_ANDROID_LOGGER=y
++CONFIG_ANDROID_PERSISTENT_RAM=y
+ CONFIG_ANDROID_RAM_CONSOLE=y
++# CONFIG_PERSISTENT_TRACER is not set
++CONFIG_ANDROID_TIMED_OUTPUT=y
+ CONFIG_ANDROID_TIMED_GPIO=y
+ CONFIG_ANDROID_LOW_MEMORY_KILLER=y
+ CONFIG_ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES=y
+@@ -583,8 +657,56 @@ CONFIG_SECURITY=y
+ CONFIG_SECURITY_NETWORK=y
+ CONFIG_LSM_MMAP_MIN_ADDR=4096
+ CONFIG_SECURITY_SELINUX=y
++CONFIG_CRYPTO=y
+ CONFIG_CRYPTO_NULL=y
++#
++# Crypto core or helper
++#
++CONFIG_CRYPTO_ALGAPI=y
++CONFIG_CRYPTO_ALGAPI2=y
++CONFIG_CRYPTO_AEAD=y
++CONFIG_CRYPTO_AEAD2=y
++CONFIG_CRYPTO_BLKCIPHER=y
++CONFIG_CRYPTO_BLKCIPHER2=y
++CONFIG_CRYPTO_HASH=y
++CONFIG_CRYPTO_HASH2=y
++CONFIG_CRYPTO_RNG2=y
++CONFIG_CRYPTO_PCOMP2=y
++CONFIG_CRYPTO_MANAGER=y
++CONFIG_CRYPTO_MANAGER2=y
++# CONFIG_CRYPTO_USER is not set
++CONFIG_CRYPTO_MANAGER_DISABLE_TESTS=y
++# CONFIG_CRYPTO_GF128MUL is not set
++# CONFIG_CRYPTO_NULL is not set
++# CONFIG_CRYPTO_PCRYPT is not set
++CONFIG_CRYPTO_WORKQUEUE=y
++# CONFIG_CRYPTO_CRYPTD is not set
++CONFIG_CRYPTO_AUTHENC=y
++#
++# Block modes
++#
+ CONFIG_CRYPTO_XCBC=y
++CONFIG_CRYPTO_CBC=y
++# CONFIG_CRYPTO_CTR is not set
++# CONFIG_CRYPTO_CTS is not set
++CONFIG_CRYPTO_ECB=y
++
+ CONFIG_CRYPTO_TWOFISH=y
+ # CONFIG_CRYPTO_ANSI_CPRNG is not set
+ CONFIG_CRC_CCITT=y
++CONFIG_CRYPTO_CRC32C=y
++CONFIG_CRYPTO_MD4=y
++CONFIG_CRYPTO_MD5=y
++CONFIG_CRYPTO_SHA1=y
++CONFIG_CRYPTO_SHA1_ARM=y
++
++# EX Config
++#
++CONFIG_CPU_VOLTAGE_TABLE=y
++CONFIG_S2W=y
++CONFIG_MSM_KGSL_SIMPLE_GOV=y
++CONFIG_GPU_VOLTAGE_TABLE=y
++CONFIG_MSM_SLEEPER=y
++CONFIG_CPU_FREQ_GOV_INTELLIACTIVE=y
++# CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE is not set
++CONFIG_LOCALVERSION="-Mokee-EX"
+diff --git a/arch/arm/mach-msm/Kconfig b/arch/arm/mach-msm/Kconfig
+index 68cc5ff..da016df 100644
+--- a/arch/arm/mach-msm/Kconfig
++++ b/arch/arm/mach-msm/Kconfig
+@@ -1648,6 +1648,24 @@ config MSM_CPU_FREQ_MIN
+ 
+ endif # CPU_FREQ_MSM
+ 
++config GPU_VOLTAGE_TABLE
++	bool "Enable GPU Voltage Table via sysfs for adjustments"
++	default n
++	help
++	  Adreno User Voltage Control
++
++config MSM_SLEEPER
++	bool "Limit max frequency and shut off cores while screen is off"
++	default n
++	help
++	  Limit max frequency and shut off cores while screen is off
++
++config CPU_VOLTAGE_TABLE
++	bool "Enable CPU Voltage Table via sysfs for adjustements"
++	default n
++	help
++	  Krait User Votlage Control
++
+ config MSM_AVS_HW
+ 	bool "Enable Adaptive Voltage Scaling (AVS)"
+ 	default n
+diff --git a/arch/arm/mach-msm/Makefile b/arch/arm/mach-msm/Makefile
+index d505bd1..1a07f55 100644
+--- a/arch/arm/mach-msm/Makefile
++++ b/arch/arm/mach-msm/Makefile
+@@ -399,3 +399,5 @@ endif
+ obj-$(CONFIG_MSM_CPU_PWRCTL) +=  msm_cpu_pwrctl.o
+ 
+ obj-$(CONFIG_ARCH_RANDOM) += early_random.o
++
++obj-$(CONFIG_MSM_SLEEPER) += msm-sleeper.o
+diff --git a/arch/arm/mach-msm/acpuclock-8064.c b/arch/arm/mach-msm/acpuclock-8064.c
+index 0fe1793..5f4b0b1 100644
+--- a/arch/arm/mach-msm/acpuclock-8064.c
++++ b/arch/arm/mach-msm/acpuclock-8064.c
+@@ -98,6 +98,7 @@ static struct scalable scalable[] __initdata = {
+ /*
+  * The correct maximum rate for 8064ab in 600 MHZ.
+  * We rely on the RPM rounding requests up here.
++ * bus(前端总线)频率
+ */
+ static struct msm_bus_paths bw_level_tbl[] __initdata = {
+ 	[0] =  BW_MBPS(640), /* At least  80 MHz on bus. */
+@@ -115,6 +116,7 @@ static struct msm_bus_scale_pdata bus_scale_data __initdata = {
+ 	.name = "acpuclk-8064",
+ };
+ 
++/* l2(二级缓存)频率 */
+ static struct l2_level l2_freq_tbl[] __initdata = {
+ 	[0]  = { {  384000, PLL_8, 0, 0x00 },  950000, 1050000, 1 },
+ 	[1]  = { {  432000, HFPLL, 2, 0x20 }, 1050000, 1050000, 2 },
+@@ -134,33 +136,8 @@ static struct l2_level l2_freq_tbl[] __initdata = {
+ 	{ }
+ };
+ 
++/* 8064各体质频率 */
+ static struct acpu_level tbl_slow[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   950000 },
+-	{ 0, {   432000, HFPLL, 2, 0x20 }, L2(5),   975000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   975000 },
+-	{ 0, {   540000, HFPLL, 2, 0x28 }, L2(5),  1000000 },
+-	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),  1000000 },
+-	{ 0, {   648000, HFPLL, 1, 0x18 }, L2(5),  1025000 },
+-	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),  1025000 },
+-	{ 0, {   756000, HFPLL, 1, 0x1C }, L2(5),  1075000 },
+-	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),  1075000 },
+-	{ 0, {   864000, HFPLL, 1, 0x20 }, L2(5),  1100000 },
+-	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),  1100000 },
+-	{ 0, {   972000, HFPLL, 1, 0x24 }, L2(5),  1125000 },
+-	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),  1125000 },
+-	{ 0, {  1080000, HFPLL, 1, 0x28 }, L2(14), 1175000 },
+-	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14), 1175000 },
+-	{ 0, {  1188000, HFPLL, 1, 0x2C }, L2(14), 1200000 },
+-	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14), 1200000 },
+-	{ 0, {  1296000, HFPLL, 1, 0x30 }, L2(14), 1225000 },
+-	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1225000 },
+-	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1237500 },
+-	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1237500 },
+-	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1250000 },
+-	{ 0, { 0 } }
+-};
+-
+-static struct acpu_level tbl_nom[] __initdata = {
+ 	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   900000 },
+ 	{ 0, {   432000, HFPLL, 2, 0x20 }, L2(5),   925000 },
+ 	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   925000 },
+@@ -183,45 +160,21 @@ static struct acpu_level tbl_nom[] __initdata = {
+ 	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1187500 },
+ 	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1187500 },
+ 	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1200000 },
++	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1225000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1250000 },
+ 	{ 0, { 0 } }
+ };
+ 
+-static struct acpu_level tbl_fast[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   850000 },
+-	{ 0, {   432000, HFPLL, 2, 0x20 }, L2(5),   875000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   875000 },
+-	{ 0, {   540000, HFPLL, 2, 0x28 }, L2(5),   900000 },
+-	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   900000 },
+-	{ 0, {   648000, HFPLL, 1, 0x18 }, L2(5),   925000 },
+-	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   925000 },
+-	{ 0, {   756000, HFPLL, 1, 0x1C }, L2(5),   975000 },
+-	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   975000 },
+-	{ 0, {   864000, HFPLL, 1, 0x20 }, L2(5),  1000000 },
+-	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),  1000000 },
+-	{ 0, {   972000, HFPLL, 1, 0x24 }, L2(5),  1025000 },
+-	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),  1025000 },
+-	{ 0, {  1080000, HFPLL, 1, 0x28 }, L2(14), 1075000 },
+-	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14), 1075000 },
+-	{ 0, {  1188000, HFPLL, 1, 0x2C }, L2(14), 1100000 },
+-	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14), 1100000 },
+-	{ 0, {  1296000, HFPLL, 1, 0x30 }, L2(14), 1125000 },
+-	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1125000 },
+-	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1137500 },
+-	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1137500 },
+-	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1150000 },
+-	{ 0, { 0 } }
+-};
+-
+-static struct acpu_level tbl_faster[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   850000 },
+-	{ 0, {   432000, HFPLL, 2, 0x20 }, L2(5),   875000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   875000 },
+-	{ 0, {   540000, HFPLL, 2, 0x28 }, L2(5),   900000 },
+-	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   900000 },
+-	{ 0, {   648000, HFPLL, 1, 0x18 }, L2(5),   925000 },
+-	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   925000 },
+-	{ 0, {   756000, HFPLL, 1, 0x1C }, L2(5),   962500 },
+-	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   962500 },
++static struct acpu_level tbl_nom[] __initdata = {
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   825000 },
++	{ 0, {   432000, HFPLL, 2, 0x20 }, L2(5),   850000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   850000 },
++	{ 0, {   540000, HFPLL, 2, 0x28 }, L2(5),   875000 },
++	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   875000 },
++	{ 0, {   648000, HFPLL, 1, 0x18 }, L2(5),   900000 },
++	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   900000 },
++	{ 0, {   756000, HFPLL, 1, 0x1C }, L2(5),   950000 },
++	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   950000 },
+ 	{ 0, {   864000, HFPLL, 1, 0x20 }, L2(5),   975000 },
+ 	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   975000 },
+ 	{ 0, {   972000, HFPLL, 1, 0x24 }, L2(5),  1000000 },
+@@ -235,6 +188,64 @@ static struct acpu_level tbl_faster[] __initdata = {
+ 	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1112500 },
+ 	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1112500 },
+ 	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1125000 },
++	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1150000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1175000 },
++	{ 0, { 0 } }
++};
++
++static struct acpu_level tbl_fast[] __initdata = {
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   800000 },
++	{ 0, {   432000, HFPLL, 2, 0x20 }, L2(5),   800000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   800000 },
++	{ 0, {   540000, HFPLL, 2, 0x28 }, L2(5),   825000 },
++	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   825000 },
++	{ 0, {   648000, HFPLL, 1, 0x18 }, L2(5),   850000 },
++	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   850000 },
++	{ 0, {   756000, HFPLL, 1, 0x1C }, L2(5),   900000 },
++	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   900000 },
++	{ 0, {   864000, HFPLL, 1, 0x20 }, L2(5),   925000 },
++	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   925000 },
++	{ 0, {   972000, HFPLL, 1, 0x24 }, L2(5),   950000 },
++	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   950000 },
++	{ 0, {  1080000, HFPLL, 1, 0x28 }, L2(14), 1000000 },
++	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14), 1000000 },
++	{ 0, {  1188000, HFPLL, 1, 0x2C }, L2(14), 1025000 },
++	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14), 1025000 },
++	{ 0, {  1296000, HFPLL, 1, 0x30 }, L2(14), 1050000 },
++	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1050000 },
++	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1062500 },
++	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1062500 },
++	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1075000 },
++	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1100000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1125000 },
++	{ 0, { 0 } }
++};
++
++static struct acpu_level tbl_faster[] __initdata = {
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   800000 },
++	{ 0, {   432000, HFPLL, 2, 0x20 }, L2(5),   800000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   800000 },
++	{ 0, {   540000, HFPLL, 2, 0x28 }, L2(5),   825000 },
++	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   825000 },
++	{ 0, {   648000, HFPLL, 1, 0x18 }, L2(5),   850000 },
++	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   850000 },
++	{ 0, {   756000, HFPLL, 1, 0x1C }, L2(5),   887500 },
++	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   887500 },
++	{ 0, {   864000, HFPLL, 1, 0x20 }, L2(5),   900000 },
++	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   900000 },
++	{ 0, {   972000, HFPLL, 1, 0x24 }, L2(5),   925000 },
++	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   925000 },
++	{ 0, {  1080000, HFPLL, 1, 0x28 }, L2(14),  975000 },
++	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  975000 },
++	{ 0, {  1188000, HFPLL, 1, 0x2C }, L2(14), 1000000 },
++	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14), 1000000 },
++	{ 0, {  1296000, HFPLL, 1, 0x30 }, L2(14), 1025000 },
++	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1025000 },
++	{ 0, {  1404000, HFPLL, 1, 0x34 }, L2(14), 1037500 },
++	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1037500 },
++	{ 1, {  1512000, HFPLL, 1, 0x38 }, L2(14), 1050000 },
++	{ 1, {  1620000, HFPLL, 1, 0x3C }, L2(14), 1075000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1100000 },
+ 	{ 0, { 0 } }
+ };
+ 
+@@ -350,132 +361,141 @@ static struct acpu_level tbl_PVS6_1512MHz[] __initdata = {
+ 	{ 0, { 0 } }
+ };
+ 
++/* 8064T各体质频率 */
+ static struct acpu_level tbl_PVS0_1700MHz[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   950000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   950000 },
+-	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   950000 },
+-	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   962500 },
+-	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),  1000000 },
+-	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),  1025000 },
+-	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),  1037500 },
+-	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14), 1075000 },
+-	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14), 1087500 },
+-	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1125000 },
+-	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1150000 },
+-	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1175000 },
+-	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1225000 },
+-	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1250000 },
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   900000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   900000 },
++	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   900000 },
++	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   912500 },
++	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   950000 },
++	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   975000 },
++	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   987500 },
++	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14), 1025000 },
++	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14), 1037500 },
++	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1075000 },
++	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1100000 },
++	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1125000 },
++	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1175000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1200000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1250000 },
+ 	{ 0, { 0 } }
+ };
+ 
+ static struct acpu_level tbl_PVS1_1700MHz[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   950000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   950000 },
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   850000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   875000 },
+ 	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   950000 },
+-	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   962500 },
+-	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   975000 },
+-	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),  1000000 },
+-	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),  1012500 },
+-	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14), 1037500 },
+-	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14), 1050000 },
+-	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1087500 },
+-	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1112500 },
+-	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1150000 },
+-	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1187500 },
+-	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1200000 },
+-	{ 0, { 0 } }
+-};
+-
+-static struct acpu_level tbl_PVS2_1700MHz[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   925000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   925000 },
+-	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   925000 },
+-	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   925000 },
+-	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   937500 },
+-	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   950000 },
+-	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   975000 },
+-	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14), 1000000 },
+-	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14), 1012500 },
+-	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1037500 },
+-	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1075000 },
+-	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1100000 },
+-	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1137500 },
+-	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1162500 },
+-	{ 0, { 0 } }
+-};
+-
+-static struct acpu_level tbl_PVS3_1700MHz[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   900000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   900000 },
+-	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   900000 },
+-	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   900000 },
++	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   887500 },
+ 	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   900000 },
+ 	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   925000 },
+-	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   950000 },
+-	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  975000 },
+-	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14),  987500 },
+-	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1000000 },
++	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   937500 },
++	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  962500 },
++	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14),  975000 },
++	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14), 1012500 },
+ 	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1037500 },
+-	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1062500 },
+-	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1100000 },
++	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1075000 },
++	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1112500 },
+ 	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1125000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1220000 },
+ 	{ 0, { 0 } }
+ };
+ 
+-static struct acpu_level tbl_PVS4_1700MHz[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   875000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   875000 },
+-	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   875000 },
++static struct acpu_level tbl_PVS2_1700MHz[] __initdata = {
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   825000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   837500 },
++	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   850000 },
+ 	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   875000 },
+ 	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   887500 },
+ 	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   900000 },
+ 	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   925000 },
+ 	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  950000 },
+ 	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14),  962500 },
+-	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14),  975000 },
+-	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1000000 },
+-	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1037500 },
+-	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1075000 },
+-	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1100000 },
++	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14),  987500 },
++	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14), 1025000 },
++	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1050000 },
++	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1087500 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1112500 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1162500 },
++	{ 0, { 0 } }
++};
++
++static struct acpu_level tbl_PVS3_1700MHz[] __initdata = {
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   800000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   800000 },
++	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   800000 },
++	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   800000 },
++	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   800000 },
++	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   850000 },
++	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   875000 },
++	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  900000 },
++	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14),  912500 },
++	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14),  925000 },
++	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14),  962500 },
++	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  987500 },
++	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1025000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1050000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1125000 },
++	{ 0, { 0 } }
++};
++
++static struct acpu_level tbl_PVS4_1700MHz[] __initdata = {
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   800000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   800000 },
++	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   800000 },
++	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   800000 },
++	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   812500 },
++	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   825000 },
++	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   850000 },
++	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  875000 },
++	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14),  887000 },
++	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14),  900000 },
++	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14),  925000 },
++	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  962500 },
++	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1000000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1025000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1100000 },
+ 	{ 0, { 0 } }
+ };
+ 
+ static struct acpu_level tbl_PVS5_1700MHz[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   875000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   875000 },
+-	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   875000 },
+-	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   875000 },
+-	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   887500 },
+-	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   900000 },
+-	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   925000 },
+-	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  937500 },
+-	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14),  950000 },
+-	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14),  962500 },
+-	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14),  987500 },
+-	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1012500 },
+-	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1050000 },
+-	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1075000 },
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   800000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   800000 },
++	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   800000 },
++	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   800000 },
++	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   812500 },
++	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   825000 },
++	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   850000 },
++	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  862500 },
++	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14),  875000 },
++	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14),  887500 },
++	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14),  912500 },
++	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  937500 },
++	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14),  975000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1000000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1075000 },
+ 	{ 0, { 0 } }
+ };
+ 
+ static struct acpu_level tbl_PVS6_1700MHz[] __initdata = {
+-	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   875000 },
+-	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   875000 },
+-	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   875000 },
+-	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   875000 },
+-	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   887500 },
+-	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   900000 },
+-	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   925000 },
+-	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  937500 },
+-	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14),  950000 },
+-	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14),  962500 },
+-	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14),  975000 },
+-	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14), 1000000 },
+-	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14), 1025000 },
+-	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14), 1050000 },
++	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   800000 },
++	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   800000 },
++	{ 1, {   594000, HFPLL, 1, 0x16 }, L2(5),   800000 },
++	{ 1, {   702000, HFPLL, 1, 0x1A }, L2(5),   800000 },
++	{ 1, {   810000, HFPLL, 1, 0x1E }, L2(5),   812500 },
++	{ 1, {   918000, HFPLL, 1, 0x22 }, L2(5),   825000 },
++	{ 1, {  1026000, HFPLL, 1, 0x26 }, L2(5),   850000 },
++	{ 1, {  1134000, HFPLL, 1, 0x2A }, L2(14),  862500 },
++	{ 1, {  1242000, HFPLL, 1, 0x2E }, L2(14),  875000 },
++	{ 1, {  1350000, HFPLL, 1, 0x32 }, L2(14),  887500 },
++	{ 1, {  1458000, HFPLL, 1, 0x36 }, L2(14),  900000 },
++	{ 1, {  1566000, HFPLL, 1, 0x3A }, L2(14),  925000 },
++	{ 1, {  1674000, HFPLL, 1, 0x3E }, L2(14),  950000 },
++	{ 1, {  1728000, HFPLL, 1, 0x40 }, L2(14),  975000 },
++	{ 1, {  1890000, HFPLL, 1, 0x46 }, L2(14), 1050000 },
+ 	{ 0, { 0 } }
+ };
+ 
++/* 8064AB各体质频率 */
+ static struct acpu_level tbl_PVS0_2000MHz[] __initdata = {
+ 	{ 1, {   384000, PLL_8, 0, 0x00 }, L2(0),   950000 },
+ 	{ 1, {   486000, HFPLL, 2, 0x24 }, L2(5),   950000 },
+@@ -609,6 +629,7 @@ static struct acpu_level tbl_PVS6_2000MHz[] __initdata = {
+ 	{ 0, { 0 } }
+ };
+ 
++/* 跟据speed_bin和pvs来选择频率表，最后一个值为boost_uv(动态浮动电压) */
+ static struct pvs_table pvs_tables[NUM_SPEED_BINS][NUM_PVS] __initdata = {
+ 	[0][PVS_SLOW]    = {tbl_slow, sizeof(tbl_slow),     0 },
+ 	[0][PVS_NOMINAL] = {tbl_nom,  sizeof(tbl_nom),  25000 },
+diff --git a/arch/arm/mach-msm/acpuclock-krait.c b/arch/arm/mach-msm/acpuclock-krait.c
+index 64b162e..17d18f4 100644
+--- a/arch/arm/mach-msm/acpuclock-krait.c
++++ b/arch/arm/mach-msm/acpuclock-krait.c
+@@ -925,6 +925,55 @@ static void __init bus_init(const struct l2_level *l2_level)
+ 		dev_err(drv.dev, "initial bandwidth req failed (%d)\n", ret);
+ }
+ 
++/* cpu电压控制 */
++#ifdef CONFIG_CPU_VOLTAGE_TABLE
++
++#define HFPLL_MIN_VDD		 800000
++#define HFPLL_MAX_VDD		1300000
++
++ssize_t acpuclk_get_vdd_levels_str(char *buf) {
++
++	int i, len = 0;
++
++	if (buf) {
++		mutex_lock(&driver_lock);
++
++		for (i = 0; drv.acpu_freq_tbl[i].speed.khz; i++) {
++			/* updated to use uv required by 8x60 architecture - faux123 */
++			len += sprintf(buf + len, "%8lu: %8d\n", drv.acpu_freq_tbl[i].speed.khz,
++				drv.acpu_freq_tbl[i].vdd_core );
++		}
++
++		mutex_unlock(&driver_lock);
++	}
++	return len;
++}
++
++/* updated to use uv required by 8x60 architecture - faux123 */
++void acpuclk_set_vdd(unsigned int khz, int vdd_uv) {
++
++	int i;
++	unsigned int new_vdd_uv;
++
++	mutex_lock(&driver_lock);
++
++	for (i = 0; drv.acpu_freq_tbl[i].speed.khz; i++) {
++		if (khz == 0)
++			new_vdd_uv = min(max((unsigned int)(drv.acpu_freq_tbl[i].vdd_core + vdd_uv),
++				(unsigned int)HFPLL_MIN_VDD), (unsigned int)HFPLL_MAX_VDD);
++		else if ( drv.acpu_freq_tbl[i].speed.khz == khz)
++			new_vdd_uv = min(max((unsigned int)vdd_uv,
++				(unsigned int)HFPLL_MIN_VDD), (unsigned int)HFPLL_MAX_VDD);
++		else
++			continue;
++
++		drv.acpu_freq_tbl[i].vdd_core = new_vdd_uv;
++	}
++	pr_warn("faux123: user voltage table modified!\n");
++	mutex_unlock(&driver_lock);
++}
++#endif	/* CONFIG_CPU_VOTALGE_TABLE */
++
+ #ifdef CONFIG_CPU_FREQ_MSM
+ static struct cpufreq_frequency_table freq_table[NR_CPUS][35];
+ 
+diff --git a/arch/arm/mach-msm/board-8064-regulator.c b/arch/arm/mach-msm/board-8064-regulator.c
+index f3750d2..a7640f2 100644
+--- a/arch/arm/mach-msm/board-8064-regulator.c
++++ b/arch/arm/mach-msm/board-8064-regulator.c
+@@ -576,18 +576,18 @@ mpq8064_gpio_regulator_pdata[] __devinitdata = {
+ 					SX150X_GPIO(4, 15), "avc_5v"),
+ };
+ 
+-/* SAW regulator constraints */
++/* SAW regulator constraints 主板CPU接口电压 */
+ struct regulator_init_data msm8064_saw_regulator_pdata_8921_s5 =
+ 	/*	      ID  vreg_name	       min_uV   max_uV */
+-	SAW_VREG_INIT(S5, "8921_s5",	       850000, 1300000);
++	SAW_VREG_INIT(S5, "8921_s5",	       775000, 1300000);
+ struct regulator_init_data msm8064_saw_regulator_pdata_8921_s6 =
+-	SAW_VREG_INIT(S6, "8921_s6",	       850000, 1300000);
++	SAW_VREG_INIT(S6, "8921_s6",	       775000, 1300000);
+ 
+ struct regulator_init_data msm8064_saw_regulator_pdata_8821_s0 =
+ 	/*	      ID       vreg_name	min_uV  max_uV */
+-	SAW_VREG_INIT(8821_S0, "8821_s0",       850000, 1300000);
++	SAW_VREG_INIT(8821_S0, "8821_s0",       775000, 1300000);
+ struct regulator_init_data msm8064_saw_regulator_pdata_8821_s1 =
+-	SAW_VREG_INIT(8821_S1, "8821_s1",       850000, 1300000);
++	SAW_VREG_INIT(8821_S1, "8821_s1",       775000, 1300000);
+ 
+ /* PM8921 regulator constraints */
+ struct pm8xxx_regulator_platform_data
+diff --git a/arch/arm/mach-msm/board-aries-gpu.c b/arch/arm/mach-msm/board-aries-gpu.c
+index f6b4fff..12e0aee 100644
+--- a/arch/arm/mach-msm/board-aries-gpu.c
++++ b/arch/arm/mach-msm/board-aries-gpu.c
+@@ -22,6 +22,8 @@
+ #include "devices.h"
+ #include "board-aries.h"
+ 
++uint32_t max_gpu = 1;
++
+ #ifdef CONFIG_MSM_DCVS
+ static struct msm_dcvs_freq_entry grp3d_freq[] = {
+ 	{0, 900, 0, 0, 0},
+@@ -88,6 +90,7 @@ static struct msm_bus_vectors grp3d_init_vectors[] = {
+ 	},
+ };
+ 
++/* gpu带宽，单位mbps */
+ static struct msm_bus_vectors grp3d_low_vectors[] = {
+ 	{
+ 		.src = MSM_BUS_MASTER_GRAPHICS_3D,
+@@ -221,7 +224,7 @@ static struct kgsl_device_iommu_data kgsl_3d0_iommu_data[] = {
+ static struct kgsl_device_platform_data kgsl_3d0_pdata = {
+ 	.pwrlevel = {
+ 		{
+-			.gpu_freq = 400000000,
++			.gpu_freq = 450000000,
+ 			.bus_freq = 4,
+ 			.io_fraction = 0,
+ 		},
+@@ -272,12 +275,28 @@ struct platform_device device_kgsl_3d0 = {
+ 	},
+ };
+ 
++/*gpuoc*/
++static int __init read_max_gpu(char *gpu_oc)
++{
++	if (strcmp(gpu_oc, "1") == 0) {
++		max_gpu = 1;
++	} else {
++		max_gpu = 0;
++	}
++	return 0;
++}
++
++__setup("gpu_oc=", read_max_gpu);
++/*end gpuoc*/
++
+ void __init apq8064_init_gpu(void)
+ {
+ 	unsigned int version = socinfo_get_version();
++	if (max_gpu == 0)
++		kgsl_3d0_pdata.pwrlevel[0].gpu_freq = 400000000;
+ 
+ 	if (cpu_is_apq8064ab())
+-		kgsl_3d0_pdata.pwrlevel[0].gpu_freq = 450000000;
++		kgsl_3d0_pdata.pwrlevel[0].gpu_freq = 400000000;
+ 	if (SOCINFO_VERSION_MAJOR(version) == 2) {
+ 		kgsl_3d0_pdata.chipid = ADRENO_CHIPID(3, 2, 0, 2);
+ 	} else {
+diff --git a/arch/arm/mach-msm/board-aries-regulator.c b/arch/arm/mach-msm/board-aries-regulator.c
+index cdc67a2..966e45d 100644
+--- a/arch/arm/mach-msm/board-aries-regulator.c
++++ b/arch/arm/mach-msm/board-aries-regulator.c
+@@ -541,18 +541,18 @@ mpq8064_gpio_regulator_pdata[] __devinitdata = {
+ 					SX150X_GPIO(4, 15), "avc_5v"),
+ };
+ 
+-/* SAW regulator constraints */
++/* SAW regulator constraints 主板CPU接口电压(mi2) */
+ struct regulator_init_data msm8064_saw_regulator_pdata_8921_s5 =
+ 	/*	      ID  vreg_name	       min_uV   max_uV */
+-	SAW_VREG_INIT(S5, "8921_s5",	       850000, 1300000);
++	SAW_VREG_INIT(S5, "8921_s5",	       775000, 1300000);
+ struct regulator_init_data msm8064_saw_regulator_pdata_8921_s6 =
+-	SAW_VREG_INIT(S6, "8921_s6",	       850000, 1300000);
++	SAW_VREG_INIT(S6, "8921_s6",	       775000, 1300000);
+ 
+ struct regulator_init_data msm8064_saw_regulator_pdata_8821_s0 =
+ 	/*	      ID       vreg_name	min_uV  max_uV */
+-	SAW_VREG_INIT(8821_S0, "8821_s0",       850000, 1300000);
++	SAW_VREG_INIT(8821_S0, "8821_s0",       775000, 1300000);
+ struct regulator_init_data msm8064_saw_regulator_pdata_8821_s1 =
+-	SAW_VREG_INIT(8821_S1, "8821_s1",       850000, 1300000);
++	SAW_VREG_INIT(8821_S1, "8821_s1",       775000, 1300000);
+ 
+ /* PM8921 regulator constraints */
+ struct pm8xxx_regulator_platform_data
+diff --git a/arch/arm/mach-msm/board-aries.c b/arch/arm/mach-msm/board-aries.c
+index 81a5b61..a8f0a57 100644
+--- a/arch/arm/mach-msm/board-aries.c
++++ b/arch/arm/mach-msm/board-aries.c
+@@ -117,7 +117,7 @@
+ #define MSM_ION_MFC_META_SIZE  0x40000 /* 256 Kbytes */
+ #define MSM_CONTIG_MEM_SIZE  0x65000
+ #ifdef CONFIG_MSM_IOMMU
+-#define MSM_ION_MM_SIZE		0x3800000
++#define MSM_ION_MM_SIZE		0x5C00000
+ #define MSM_ION_SF_SIZE		0
+ #define MSM_ION_QSECOM_SIZE	0x780000 /* (7.5MB) */
+ #ifdef CONFIG_CMA
+diff --git a/arch/arm/mach-msm/clock-8960.c b/arch/arm/mach-msm/clock-8960.c
+old mode 100755
+new mode 100644
+index f67de68..731bebb
+--- a/arch/arm/mach-msm/clock-8960.c
++++ b/arch/arm/mach-msm/clock-8960.c
+@@ -380,8 +380,53 @@ enum vdd_dig_levels {
+ 	VDD_DIG_NUM
+ };
+ 
++
++/* GPU电压控制 */
++#ifdef CONFIG_GPU_VOLTAGE_TABLE
++#define GPU_MIN_VDD           900
++#define GPU_MAX_VDD          1200
++
++/* low=128mhz nominal=320mhz high=450mhz
++详见fmax_gfx3d_8064[VDD_DIG_NUM] */
++static int vdd_uv[] = {
++  [VDD_DIG_NONE]    =       0,
++  [VDD_DIG_LOW]     =  900000,
++  [VDD_DIG_NOMINAL] = 1000000,
++  [VDD_DIG_HIGH]    = 1150000
++};
++
++ssize_t get_gpu_vdd_levels_str(char *buf)
++{
++  int i, len = 0;
++
++  if (buf) {
++    for (i = 1; i <= 3; i++) {
++		len += sprintf(buf + len, "%i\n", vdd_uv[i]/1000);
++		}
++	}
++  return len;
++}
++
++void set_gpu_vdd_levels(int uv_tbl[])
++{
++  int i;
++  for (i = 1; i <= 3; i++)
++  {
++	vdd_uv[i] = (min(max(uv_tbl[i - 1],
++			GPU_MIN_VDD), GPU_MAX_VDD))*1000;
++  }
++}
++#endif
++
+ static int set_vdd_dig_8960(struct clk_vdd_class *vdd_class, int level)
+ {
++#ifdef CONFIG_GPU_VOLTAGE_TABLE
++  int ret;
++  ret = rpm_vreg_set_voltage(RPM_VREG_ID_PM8921_S3, RPM_VREG_VOTER3,
++            vdd_uv[level], vdd_uv[VDD_DIG_HIGH], 1);
++   //pr_alert("GPU VOLTAGE - %d - %d", vdd_uv[level], ret);
++  return ret;
++#else
+ 	static const int vdd_uv[] = {
+ 		[VDD_DIG_NONE]    =       0,
+ 		[VDD_DIG_LOW]     =  945000,
+@@ -390,6 +435,7 @@ static int set_vdd_dig_8960(struct clk_vdd_class *vdd_class, int level)
+ 	};
+ 	return rpm_vreg_set_voltage(RPM_VREG_ID_PM8921_S3, RPM_VREG_VOTER3,
+ 				    vdd_uv[level], 1150000, 1);
++#endif
+ }
+ 
+ static DEFINE_VDD_CLASS(vdd_dig, set_vdd_dig_8960, VDD_DIG_NUM);
+@@ -3531,7 +3577,14 @@ static struct clk_freq_tbl clk_tbl_gfx3d[] = {
+ 	F_GFX3D(266667000, pll2,  1,  3),
+ 	F_GFX3D(320000000, pll2,  2,  5),
+ 	F_GFX3D(400000000, pll2,  1,  2),
++	F_GFX3D(409500000, pll15, 1,  2),
+ 	F_GFX3D(450000000, pll15, 1,  2),
++	F_GFX3D(477000000, pll15, 1,  2),
++	F_GFX3D(490500000, pll15, 1,  2),
++	F_GFX3D(504000000, pll15, 1,  2),
++	F_GFX3D(531000000, pll15, 1,  2),
++	F_GFX3D(558000000, pll15, 1,  2),
++	F_GFX3D(585000000, pll15, 1,  2),
+ 	F_END
+ };
+ 
+@@ -3586,8 +3639,8 @@ static unsigned long fmax_gfx3d_8064ab[VDD_DIG_NUM] = {
+ 
+ static unsigned long fmax_gfx3d_8064[VDD_DIG_NUM] = {
+ 	[VDD_DIG_LOW]     = 128000000,
+-	[VDD_DIG_NOMINAL] = 325000000,
+-	[VDD_DIG_HIGH]    = 400000000
++	[VDD_DIG_NOMINAL] = 320000000,
++	[VDD_DIG_HIGH]    = 450000000
+ };
+ 
+ static unsigned long fmax_gfx3d_8930[VDD_DIG_NUM] = {
+@@ -6324,7 +6377,9 @@ static struct pll_config pll4_config_393 __initdata = {
+ 	.main_output_mask = BIT(23),
+ };
+ 
+-static struct pll_config_regs pll15_regs __initdata = {
++
++/* 修改pll15结构名称 */
++static struct pll_config_regs pll15_regs = {
+ 	.l_reg = MM_PLL3_L_VAL_REG,
+ 	.m_reg = MM_PLL3_M_VAL_REG,
+ 	.n_reg = MM_PLL3_N_VAL_REG,
+@@ -6332,10 +6387,11 @@ static struct pll_config_regs pll15_regs __initdata = {
+ 	.mode_reg = MM_PLL3_MODE_REG,
+ };
+ 
+-static struct pll_config pll15_config __initdata = {
+-	.l = (0x24 | BVAL(31, 7, 0x620)),
++/* 修改pll15结构名称&n值 */
++static struct pll_config pll15_config = {
++	.l = (0x21 | BVAL(31, 7, 0x620)),
+ 	.m = 0x1,
+-	.n = 0x9,
++	.n = 0x3,
+ 	.vco_val = BVAL(17, 16, 0x2),
+ 	.vco_mask = BM(17, 16),
+ 	.pre_div_val = 0x0,
+@@ -6589,6 +6645,19 @@ static void __init reg_init(void)
+ 	}
+ }
+ 
++//GPU_OC
++/* 创建pll超频方法 */
++extern void configure_pllOC(struct pll_config *config, struct pll_config_regs *regs, u32 ena_fsm_mode);
++
++void __ref SetGPUpll_config(u32 loc, unsigned long freq)
++{
++	pll15_config.l = (loc | BVAL(31, 7, 0x620));
++	pll15_config.m = 0x1;
++	pll15_config.n = 0x3;
++	configure_pllOC(&pll15_config, &pll15_regs, 0);
++	printk("ElementalX: set GPU OC %ld", freq / 1000000);
++}
++
+ struct clock_init_data msm8960_clock_init_data __initdata;
+ static void __init msm8960_clock_pre_init(void)
+ {
+diff --git a/arch/arm/mach-msm/clock-pll.c b/arch/arm/mach-msm/clock-pll.c
+index aeb1c5e..e6eb1f3 100644
+--- a/arch/arm/mach-msm/clock-pll.c
++++ b/arch/arm/mach-msm/clock-pll.c
+@@ -501,6 +501,43 @@ void __init __configure_pll(struct pll_config *config,
+ 	writel_relaxed(regval, PLL_CONFIG_REG(regs));
+ }
+ 
++//GPU_OC
++/* 设置pll值 */
++void configure_pllOC(struct pll_config *config,
++    struct pll_config_regs *regs, u32 ena_fsm_mode)
++{
++  u32 regval;
++
++  writel_relaxed(config->l, PLL_L_REG(regs));
++  writel_relaxed(config->m, PLL_M_REG(regs));
++  writel_relaxed(config->n, PLL_N_REG(regs));
++
++  regval = readl_relaxed(PLL_CONFIG_REG(regs));
++
++  /* Enable the MN accumulator  */
++  if (config->mn_ena_mask) {
++    regval &= ~config->mn_ena_mask;
++    regval |= config->mn_ena_val;
++  }
++
++  /* Enable the main output */
++  if (config->main_output_mask) {
++    regval &= ~config->main_output_mask;
++    regval |= config->main_output_val;
++  }
++
++  /* Set pre-divider and post-divider values */
++  regval &= ~config->pre_div_mask;
++  regval |= config->pre_div_val;
++  regval &= ~config->post_div_mask;
++  regval |= config->post_div_val;
++
++  /* Select VCO setting */
++  regval &= ~config->vco_mask;
++  regval |= config->vco_val;
++  writel_relaxed(regval, PLL_CONFIG_REG(regs));
++}
++
+ void __init configure_sr_pll(struct pll_config *config,
+ 		struct pll_config_regs *regs, u32 ena_fsm_mode)
+ {
+diff --git a/arch/arm/mach-msm/cpufreq.c b/arch/arm/mach-msm/cpufreq.c
+index f270335..5dabca1 100644
+--- a/arch/arm/mach-msm/cpufreq.c
++++ b/arch/arm/mach-msm/cpufreq.c
+@@ -32,6 +32,10 @@
+ 
+ #include "acpuclock.h"
+ 
++/* maxscroff */
++uint32_t maxscroff_freq = 702000;
++uint32_t maxscroff = 0;
++
+ struct cpufreq_work_struct {
+ 	struct work_struct work;
+ 	struct cpufreq_policy *policy;
+@@ -376,8 +380,83 @@ static int msm_cpufreq_resume(struct cpufreq_policy *policy)
+ 	return 0;
+ }
+ 
++/** maxscreen off sysfs interface **/
++
++static ssize_t show_max_screen_off_khz(struct cpufreq_policy *policy, char *buf)
++{
++	return sprintf(buf, "%u\n", maxscroff_freq);
++}
++
++static ssize_t store_max_screen_off_khz(struct cpufreq_policy *policy,
++		const char *buf, size_t count)
++{
++	unsigned int freq = 0;
++	int ret;
++	int index;
++	struct cpufreq_frequency_table *freq_table = cpufreq_frequency_get_table(policy->cpu);
++
++	if (!freq_table)
++		return -EINVAL;
++
++	ret = sscanf(buf, "%u", &freq);
++	if (ret != 1)
++		return -EINVAL;
++
++	mutex_lock(&per_cpu(cpufreq_suspend, policy->cpu).suspend_mutex);
++
++	ret = cpufreq_frequency_table_target(policy, freq_table, freq,
++			CPUFREQ_RELATION_H, &index);
++	if (ret)
++		goto out;
++
++	maxscroff_freq = freq_table[index].frequency;
++
++	ret = count;
++
++out:
++	mutex_unlock(&per_cpu(cpufreq_suspend, policy->cpu).suspend_mutex);
++	return ret;
++}
++
++struct freq_attr msm_cpufreq_attr_max_screen_off_khz = {
++	.attr = { .name = "screen_off_max_freq",
++		.mode = 0666,
++	},
++	.show = show_max_screen_off_khz,
++	.store = store_max_screen_off_khz,
++};
++
++static ssize_t show_max_screen_off(struct cpufreq_policy *policy, char *buf)
++{
++	return sprintf(buf, "%u\n", maxscroff);
++}
++
++static ssize_t store_max_screen_off(struct cpufreq_policy *policy,
++		const char *buf, size_t count)
++{
++	if (buf[0] >= '0' && buf[0] <= '1' && buf[1] == '\n')
++            if (maxscroff != buf[0] - '0')
++		        maxscroff = buf[0] - '0';
++
++	return count;
++}
++
++struct freq_attr msm_cpufreq_attr_max_screen_off = {
++	.attr = { .name = "screen_off_max",
++		.mode = 0666,
++	},
++	.show = show_max_screen_off,
++	.store = store_max_screen_off,
++};
++
++/** end maxscreen off sysfs interface **/
++
++
+ static struct freq_attr *msm_freq_attr[] = {
+ 	&cpufreq_freq_attr_scaling_available_freqs,
++/** maxscreen off sysfs interface **/
++	&msm_cpufreq_attr_max_screen_off_khz,
++	&msm_cpufreq_attr_max_screen_off,
+ 	NULL,
+ };
+ 
+diff --git a/arch/arm/mach-msm/include/mach/kgsl.h b/arch/arm/mach-msm/include/mach/kgsl.h
+index a22b628..93ed986 100644
+--- a/arch/arm/mach-msm/include/mach/kgsl.h
++++ b/arch/arm/mach-msm/include/mach/kgsl.h
+@@ -39,6 +39,8 @@
+ 	 (((_mi) & 0xFF) << 8) | \
+ 	 ((_pa) & 0xFF))
+ 
++extern uint32_t max_gpu;
++
+ enum kgsl_iommu_context_id {
+ 	KGSL_IOMMU_CONTEXT_USER = 0,
+ 	KGSL_IOMMU_CONTEXT_PRIV = 1,
+diff --git a/arch/arm/vfp/Makefile b/arch/arm/vfp/Makefile
+index a81404c..43e4e05 100644
+--- a/arch/arm/vfp/Makefile
++++ b/arch/arm/vfp/Makefile
+@@ -7,7 +7,7 @@
+ # ccflags-y := -DDEBUG
+ # asflags-y := -DDEBUG
+ 
+-KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=softvfp+vfp -mfloat-abi=soft)
++KBUILD_AFLAGS	:=$(KBUILD_AFLAGS:-msoft-float=-Wa,-mfpu=neon-vfpv4 -mfloat-abi=hard) -mcpu=cortex-a15
+ LDFLAGS		+=--no-warn-mismatch
+ 
+ obj-y			+= vfp.o
+diff --git a/drivers/cpufreq/Kconfig b/drivers/cpufreq/Kconfig
+index 57f96eb..78bd5b0 100644
+--- a/drivers/cpufreq/Kconfig
++++ b/drivers/cpufreq/Kconfig
+@@ -109,6 +109,15 @@ config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
+ 	  loading your cpufreq low-level hardware driver, using the
+ 	  'interactive' governor for latency-sensitive workloads.
+ 
++config CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE
++	bool "intelliactive"
++	select CPU_FREQ_GOV_INTELLIACTIVE
++	help
++	  Use the CPUFreq governor 'intelliactive' as default. This allows
++	  you to get a full dynamic cpu frequency capable system by simply
++	  loading your cpufreq low-level hardware driver, using the
++	  'interactive' governor for latency-sensitive workloads.
++
+ endchoice
+ 
+ config CPU_FREQ_GOV_PERFORMANCE
+@@ -206,6 +215,23 @@ config CPU_FREQ_GOV_CONSERVATIVE
+ 
+ 	  If in doubt, say N.
+ 
++config CPU_FREQ_GOV_INTELLIACTIVE
++	tristate "'intelliactive' cpufreq policy governor"
++	help
++	  'intelliactive' - This driver adds a dynamic cpufreq policy governor
++	  designed for latency-sensitive workloads.
++
++	  This governor attempts to reduce the latency of clock
++	  increases so that the system is more responsive to
++	  interactive workloads.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called cpufreq_interactive.
++
++	  For details, take a look at linux/Documentation/cpu-freq.
++
++	  If in doubt, say N.
++
+ menu "x86 CPU frequency scaling drivers"
+ depends on X86
+ source "drivers/cpufreq/Kconfig.x86"
+diff --git a/drivers/cpufreq/Makefile b/drivers/cpufreq/Makefile
+index 46756c5..7dbb0f9 100644
+--- a/drivers/cpufreq/Makefile
++++ b/drivers/cpufreq/Makefile
+@@ -10,6 +10,7 @@ obj-$(CONFIG_CPU_FREQ_GOV_USERSPACE)	+= cpufreq_userspace.o
+ obj-$(CONFIG_CPU_FREQ_GOV_ONDEMAND)	+= cpufreq_ondemand.o
+ obj-$(CONFIG_CPU_FREQ_GOV_CONSERVATIVE)	+= cpufreq_conservative.o
+ obj-$(CONFIG_CPU_FREQ_GOV_INTERACTIVE)	+= cpufreq_interactive.o
++obj-$(CONFIG_CPU_FREQ_GOV_INTELLIACTIVE)+= cpufreq_intelliactive.o
+ 
+ # CPUfreq cross-arch helpers
+ obj-$(CONFIG_CPU_FREQ_TABLE)		+= freq_table.o
+diff --git a/drivers/cpufreq/cpufreq.c b/drivers/cpufreq/cpufreq.c
+index cbfd64d..a60b10d 100644
+--- a/drivers/cpufreq/cpufreq.c
++++ b/drivers/cpufreq/cpufreq.c
+@@ -32,12 +32,20 @@
+ 
+ #include <trace/events/power.h>
+ 
++#ifdef CONFIG_GPU_VOLTAGE_TABLE
++extern ssize_t get_gpu_vdd_levels_str(char *buf);
++extern void set_gpu_vdd_levels(int uv_tbl[]);
++#endif
++
+ /**
+  * The "cpufreq driver" - the arch- or hardware-dependent low
+  * level driver of CPUFreq support, and its spinlock. This lock
+  * also protects the cpufreq_cpu_data array.
+  */
+ static struct cpufreq_driver *cpufreq_driver;
++/* Maintains per cpu sysfs access information */
++static struct cpufreq_cpu_sysinfo cpu_sysnode[NR_CPUS];
++
+ static DEFINE_PER_CPU(struct cpufreq_policy *, cpufreq_cpu_data);
+ #ifdef CONFIG_HOTPLUG_CPU
+ /* This one keeps track of the previously set governor of a removed CPU */
+@@ -50,7 +58,6 @@ static DEFINE_PER_CPU(struct cpufreq_cpu_save_data, cpufreq_policy_save);
+ static DEFINE_SPINLOCK(cpufreq_driver_lock);
+ 
+ static struct kset *cpufreq_kset;
+-static struct kset *cpudev_kset;
+ 
+ /*
+  * cpu_policy_rwsem is a per CPU reader-writer semaphore designed to cure
+@@ -169,7 +176,7 @@ static struct cpufreq_policy *__cpufreq_cpu_get(unsigned int cpu, int sysfs)
+ 	if (!data)
+ 		goto err_out_put_module;
+ 
+-	if (!sysfs && !kobject_get(&data->kobj))
++	if (!sysfs && !kobject_get(data->kobj))
+ 		goto err_out_put_module;
+ 
+ 	spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
+@@ -197,7 +204,7 @@ static struct cpufreq_policy *cpufreq_cpu_get_sysfs(unsigned int cpu)
+ static void __cpufreq_cpu_put(struct cpufreq_policy *data, int sysfs)
+ {
+ 	if (!sysfs)
+-		kobject_put(&data->kobj);
++		kobject_put(data->kobj);
+ 	module_put(cpufreq_driver->owner);
+ }
+ 
+@@ -305,7 +312,7 @@ void cpufreq_notify_transition(struct cpufreq_freqs *freqs, unsigned int state)
+ 				CPUFREQ_POSTCHANGE, freqs);
+ 		if (likely(policy) && likely(policy->cpu == freqs->cpu)) {
+ 			policy->cur = freqs->new;
+-			sysfs_notify(&policy->kobj, NULL, "scaling_cur_freq");
++			sysfs_notify(policy->kobj, NULL, "scaling_cur_freq");
+ 		}
+ 		break;
+ 	}
+@@ -325,7 +332,7 @@ void cpufreq_notify_utilization(struct cpufreq_policy *policy,
+ 		policy->util = util;
+ 
+ 	if (policy->util >= MIN_CPU_UTIL_NOTIFY)
+-		sysfs_notify(&policy->kobj, NULL, "cpu_utilization");
++		sysfs_notify(policy->kobj, NULL, "cpu_utilization");
+ 
+ }
+ 
+@@ -393,7 +400,6 @@ out:
+ 	return err;
+ }
+ 
+-
+ /**
+  * cpufreq_per_cpu_attr_read() / show_##file_name() -
+  * print out cpufreq information
+@@ -505,7 +511,7 @@ static ssize_t store_scaling_governor(struct cpufreq_policy *policy,
+ 	policy->user_policy.policy = policy->policy;
+ 	policy->user_policy.governor = policy->governor;
+ 
+-	sysfs_notify(&policy->kobj, NULL, "scaling_governor");
++	sysfs_notify(policy->kobj, NULL, "scaling_governor");
+ 
+ 	kobject_uevent(cpufreq_global_kobject, KOBJ_ADD);
+ 
+@@ -624,6 +630,84 @@ static ssize_t show_bios_limit(struct cpufreq_policy *policy, char *buf)
+ 	return sprintf(buf, "%u\n", policy->cpuinfo.max_freq);
+ }
+ 
++#ifdef CONFIG_GPU_VOLTAGE_TABLE
++ssize_t show_gpu_mv_table(struct cpufreq_policy *policy, char *buf)
++{
++        return get_gpu_vdd_levels_str(buf);
++}
++
++ssize_t store_gpu_mv_table(struct cpufreq_policy *policy, const char *buf, size_t count)
++{
++        unsigned int ret = -EINVAL;
++        unsigned int u[3];
++        ret = sscanf(buf, "%d %d %d", &u[0], &u[1], &u[2]);
++        set_gpu_vdd_levels(u);
++        return count;
++}
++#endif
++
++#ifdef CONFIG_CPU_VOLTAGE_TABLE
++
++extern ssize_t acpuclk_get_vdd_levels_str(char *buf);
++extern void acpuclk_set_vdd(unsigned acpu_khz, int vdd);
++
++static ssize_t show_vdd_levels(struct kobject *a, struct attribute *b, char *buf) {
++	return acpuclk_get_vdd_levels_str(buf);
++}
++
++static ssize_t store_vdd_levels(struct kobject *a, struct attribute *b, const char *buf, size_t count) {
++
++	int i = 0, j;
++	int pair[2] = { 0, 0 };
++	int sign = 0;
++
++	if (count < 1)
++		return 0;
++
++	if (buf[0] == '-') {
++		sign = -1;
++		i++;
++	}
++	else if (buf[0] == '+') {
++		sign = 1;
++		i++;
++	}
++
++	for (j = 0; i < count; i++) {
++
++		char c = buf[i];
++
++		if ((c >= '0') && (c <= '9')) {
++			pair[j] *= 10;
++			pair[j] += (c - '0');
++		}
++		else if ((c == ' ') || (c == '\t')) {
++			if (pair[j] != 0) {
++				j++;
++
++				if ((sign != 0) || (j > 1))
++					break;
++			}
++		}
++		else
++			break;
++	}
++
++	if (sign != 0) {
++		if (pair[0] > 0)
++			acpuclk_set_vdd(0, sign * pair[0]);
++	}
++	else {
++		if ((pair[0] > 0) && (pair[1] > 0))
++			acpuclk_set_vdd((unsigned)pair[0], pair[1]);
++		else
++			return -EINVAL;
++	}
++	return count;
++}
++
++#endif	/* CONFIG_CPU_VOLTAGE_TABLE */
++
+ cpufreq_freq_attr_ro_perm(cpuinfo_cur_freq, 0400);
+ cpufreq_freq_attr_ro(cpuinfo_min_freq);
+ cpufreq_freq_attr_ro(cpuinfo_max_freq);
+@@ -639,6 +723,12 @@ cpufreq_freq_attr_rw(scaling_min_freq);
+ cpufreq_freq_attr_rw(scaling_max_freq);
+ cpufreq_freq_attr_rw(scaling_governor);
+ cpufreq_freq_attr_rw(scaling_setspeed);
++#ifdef CONFIG_GPU_VOLTAGE_TABLE
++cpufreq_freq_attr_rw(gpu_mv_table);
++#endif
++#ifdef CONFIG_CPU_VOLTAGE_TABLE
++define_one_global_rw(vdd_levels);
++#endif
+ 
+ static struct attribute *default_attrs[] = {
+ 	&cpuinfo_min_freq.attr,
+@@ -653,20 +743,43 @@ static struct attribute *default_attrs[] = {
+ 	&scaling_driver.attr,
+ 	&scaling_available_governors.attr,
+ 	&scaling_setspeed.attr,
++#ifdef CONFIG_GPU_VOLTAGE_TABLE
++	&gpu_mv_table.attr,
++#endif
++	NULL
++};
++
++#ifdef CONFIG_CPU_VOLTAGE_TABLE
++static struct attribute *vddtbl_attrs[] = {
++	&vdd_levels.attr,
+ 	NULL
+ };
+ 
++static struct attribute_group vddtbl_attr_group = {
++	.attrs = vddtbl_attrs,
++	.name = "vdd_table",
++};
++#endif	/* CONFIG_CPU_VOLTAGE_TABLE */
++
++
+ struct kobject *cpufreq_global_kobject;
+ EXPORT_SYMBOL(cpufreq_global_kobject);
+ 
+-#define to_policy(k) container_of(k, struct cpufreq_policy, kobj)
++#define to_cpu_kobj(k) container_of(k, struct cpufreq_cpu_sysinfo, cpu_kobj)
+ #define to_attr(a) container_of(a, struct freq_attr, attr)
+ 
+ static ssize_t show(struct kobject *kobj, struct attribute *attr, char *buf)
+ {
+-	struct cpufreq_policy *policy = to_policy(kobj);
++	struct cpufreq_cpu_sysinfo *freqobj;
++	struct cpufreq_policy *policy;
+ 	struct freq_attr *fattr = to_attr(attr);
+ 	ssize_t ret = -EINVAL;
++
++	freqobj = to_cpu_kobj(kobj);
++	if (!freqobj->cpu_policy)
++		goto no_policy;
++
++	policy = freqobj->cpu_policy;
+ 	policy = cpufreq_cpu_get_sysfs(policy->cpu);
+ 	if (!policy)
+ 		goto no_policy;
+@@ -689,9 +802,16 @@ no_policy:
+ static ssize_t store(struct kobject *kobj, struct attribute *attr,
+ 		     const char *buf, size_t count)
+ {
+-	struct cpufreq_policy *policy = to_policy(kobj);
++	struct cpufreq_cpu_sysinfo *freqobj;
++	struct cpufreq_policy *policy;
+ 	struct freq_attr *fattr = to_attr(attr);
+ 	ssize_t ret = -EINVAL;
++
++	freqobj = to_cpu_kobj(kobj);
++	if (!freqobj->cpu_policy)
++		goto no_policy;
++
++	policy = freqobj->cpu_policy;
+ 	policy = cpufreq_cpu_get_sysfs(policy->cpu);
+ 	if (!policy)
+ 		goto no_policy;
+@@ -713,9 +833,8 @@ no_policy:
+ 
+ static void cpufreq_sysfs_release(struct kobject *kobj)
+ {
+-	struct cpufreq_policy *policy = to_policy(kobj);
+-	pr_debug("last reference is dropped\n");
+-	complete(&policy->kobj_unregister);
++	/* instead set for complete, decrease ref count */
++	kobject_put(kobj);
+ }
+ 
+ static const struct sysfs_ops sysfs_ops = {
+@@ -729,6 +848,55 @@ static struct kobj_type ktype_cpufreq = {
+ 	.release	= cpufreq_sysfs_release,
+ };
+ 
++static int cpufreq_add_dev_sysfs(unsigned int cpu,
++					struct kobject *kobj,
++					struct device *dev)
++{
++	struct freq_attr **drv_attr;
++	int ret = 0;
++
++	/* prepare interface data */
++	ret = kobject_init_and_add(kobj, &ktype_cpufreq,
++				   &dev->kobj, "cpufreq");
++	if (ret)
++		return ret;
++
++	/* set up files for this cpu device */
++	drv_attr = cpufreq_driver->attr;
++	while ((drv_attr) && (*drv_attr)) {
++		ret = sysfs_create_file(kobj, &((*drv_attr)->attr));
++		if (ret)
++			goto err_out_kobj_put;
++		drv_attr++;
++	}
++	if (cpufreq_driver->get) {
++		ret = sysfs_create_file(kobj, &cpuinfo_cur_freq.attr);
++		if (ret)
++			goto err_out_kobj_put;
++	}
++	if (cpufreq_driver->target) {
++		ret = sysfs_create_file(kobj, &scaling_cur_freq.attr);
++		if (ret)
++			goto err_out_kobj_put;
++	}
++	if (cpufreq_driver->bios_limit) {
++		ret = sysfs_create_file(kobj, &bios_limit.attr);
++		if (ret)
++			goto err_out_kobj_put;
++	}
++	/* increment the kobj refcount so that no one can clean it up.
++	 * Cleaning is done at unregistration time
++	 */
++	if (!kobject_get(kobj))
++		goto err_out_kobj_put;
++
++	return ret;
++
++err_out_kobj_put:
++	kobject_put(kobj);
++	return ret;
++}
++
+ /*
+  * Returns:
+  *   Negative: Failure
+@@ -799,7 +967,7 @@ static int cpufreq_add_dev_policy(unsigned int cpu,
+ 
+ 			pr_debug("CPU already managed, adding link\n");
+ 			ret = sysfs_create_link(&dev->kobj,
+-						&managed_policy->kobj,
++						managed_policy->kobj,
+ 						"cpufreq");
+ 			if (ret)
+ 				cpufreq_cpu_put(managed_policy);
+@@ -841,7 +1009,7 @@ static int cpufreq_add_dev_symlink(unsigned int cpu,
+ 		pr_debug("CPU %u already managed, adding link\n", j);
+ 		managed_policy = cpufreq_cpu_get(cpu);
+ 		cpu_dev = get_cpu_device(j);
+-		ret = sysfs_create_link(&cpu_dev->kobj, &policy->kobj,
++		ret = sysfs_create_link(&cpu_dev->kobj, policy->kobj,
+ 					"cpufreq");
+ 		if (ret) {
+ 			cpufreq_cpu_put(managed_policy);
+@@ -856,51 +1024,10 @@ static int cpufreq_add_dev_interface(unsigned int cpu,
+ 				     struct device *dev)
+ {
+ 	struct cpufreq_policy new_policy;
+-	struct freq_attr **drv_attr;
+ 	unsigned long flags;
+ 	int ret = 0;
+ 	unsigned int j;
+ 
+-	/* prepare interface data */
+-	ret = kobject_init_and_add(&policy->kobj, &ktype_cpufreq,
+-				   &dev->kobj, "cpufreq");
+-	if (ret)
+-		return ret;
+-
+-	/* create cpu device kset */
+-	if (!cpudev_kset) {
+-		cpudev_kset = kset_create_and_add("kset", NULL, &dev->kobj);
+-		BUG_ON(!cpudev_kset);
+-		dev->kobj.kset = cpudev_kset;
+-	}
+-
+-	/* send uevent when cpu device is added */
+-	kobject_uevent(&dev->kobj, KOBJ_ADD);
+-
+-	/* set up files for this cpu device */
+-	drv_attr = cpufreq_driver->attr;
+-	while ((drv_attr) && (*drv_attr)) {
+-		ret = sysfs_create_file(&policy->kobj, &((*drv_attr)->attr));
+-		if (ret)
+-			goto err_out_kobj_put;
+-		drv_attr++;
+-	}
+-	if (cpufreq_driver->get) {
+-		ret = sysfs_create_file(&policy->kobj, &cpuinfo_cur_freq.attr);
+-		if (ret)
+-			goto err_out_kobj_put;
+-	}
+-	if (cpufreq_driver->target) {
+-		ret = sysfs_create_file(&policy->kobj, &scaling_cur_freq.attr);
+-		if (ret)
+-			goto err_out_kobj_put;
+-	}
+-	if (cpufreq_driver->bios_limit) {
+-		ret = sysfs_create_file(&policy->kobj, &bios_limit.attr);
+-		if (ret)
+-			goto err_out_kobj_put;
+-	}
+-
+ 	spin_lock_irqsave(&cpufreq_driver_lock, flags);
+ 	for_each_cpu(j, policy->cpus) {
+ 		if (!cpu_online(j))
+@@ -931,8 +1058,7 @@ static int cpufreq_add_dev_interface(unsigned int cpu,
+ 	return ret;
+ 
+ err_out_kobj_put:
+-	kobject_put(&policy->kobj);
+-	wait_for_completion(&policy->kobj_unregister);
++	kobject_put(policy->kobj);
+ 	return ret;
+ }
+ 
+@@ -1034,6 +1160,8 @@ static int cpufreq_add_dev(struct device *dev, struct subsys_interface *sif)
+ 	blocking_notifier_call_chain(&cpufreq_policy_notifier_list,
+ 				     CPUFREQ_START, policy);
+ 
++	policy->kobj = &cpu_sysnode[cpu].cpu_kobj;
++
+ 	ret = cpufreq_add_dev_policy(cpu, policy, dev);
+ 	if (ret) {
+ 		if (ret > 0)
+@@ -1047,9 +1175,10 @@ static int cpufreq_add_dev(struct device *dev, struct subsys_interface *sif)
+ 	if (ret)
+ 		goto err_out_unregister;
+ 
+-	unlock_policy_rwsem_write(cpu);
++	/* store per cpu policy for further accessing */
++	cpu_sysnode[cpu].cpu_policy = policy;
+ 
+-	kobject_uevent(&policy->kobj, KOBJ_ADD);
++	unlock_policy_rwsem_write(cpu);
+ 	module_put(cpufreq_driver->owner);
+ 	pr_debug("initialization complete\n");
+ 
+@@ -1061,10 +1190,7 @@ err_out_unregister:
+ 	for_each_cpu(j, policy->cpus)
+ 		per_cpu(cpufreq_cpu_data, j) = NULL;
+ 	spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
+-
+-	kobject_put(&policy->kobj);
+-	wait_for_completion(&policy->kobj_unregister);
+-
++	kobject_put(policy->kobj);
+ err_unlock_policy:
+ 	unlock_policy_rwsem_write(cpu);
+ 	free_cpumask_var(policy->related_cpus);
+@@ -1092,7 +1218,6 @@ static int __cpufreq_remove_dev(struct device *dev, struct subsys_interface *sif
+ 	unsigned long flags;
+ 	struct cpufreq_policy *data;
+ 	struct kobject *kobj;
+-	struct completion *cmp;
+ #ifdef CONFIG_SMP
+ 	struct device *cpu_dev;
+ 	unsigned int j;
+@@ -1110,6 +1235,7 @@ static int __cpufreq_remove_dev(struct device *dev, struct subsys_interface *sif
+ 	}
+ 	per_cpu(cpufreq_cpu_data, cpu) = NULL;
+ 
++	cpu_sysnode[cpu].cpu_policy = NULL;
+ 
+ #ifdef CONFIG_SMP
+ 	/* if this isn't the CPU which is the parent of the kobj, we
+@@ -1181,20 +1307,6 @@ static int __cpufreq_remove_dev(struct device *dev, struct subsys_interface *sif
+ 	if (cpufreq_driver->target)
+ 		__cpufreq_governor(data, CPUFREQ_GOV_STOP);
+ 
+-	kobj = &data->kobj;
+-	cmp = &data->kobj_unregister;
+-	unlock_policy_rwsem_write(cpu);
+-	kobject_put(kobj);
+-
+-	/* we need to make sure that the underlying kobj is actually
+-	 * not referenced anymore by anybody before we proceed with
+-	 * unloading.
+-	 */
+-	pr_debug("waiting for dropping of refcount\n");
+-	wait_for_completion(cmp);
+-	pr_debug("wait complete\n");
+-
+-	lock_policy_rwsem_write(cpu);
+ 	if (cpufreq_driver->exit)
+ 		cpufreq_driver->exit(data);
+ 	unlock_policy_rwsem_write(cpu);
+@@ -1222,6 +1334,35 @@ static int __cpufreq_remove_dev(struct device *dev, struct subsys_interface *sif
+ 	return 0;
+ }
+ 
++static void cpufreq_remove_dev_sysfs(void)
++{
++	unsigned int cpu;
++	struct device *dev;
++	struct kobject *kobj;
++	struct cpufreq_cpu_sysinfo *psysinfo;
++	struct cpufreq_policy *policy;
++
++	for_each_possible_cpu(cpu) {
++		dev = get_cpu_device(cpu);
++		if (dev) {
++			kobj = &cpu_sysnode[cpu].cpu_kobj;
++			psysinfo = to_cpu_kobj(kobj);
++			if (!kobj)
++				goto out;
++			kobject_put(kobj);
++
++			if (!psysinfo->cpu_policy)
++				continue;
++			policy = psysinfo->cpu_policy;
++			wait_for_completion(&policy->kobj_unregister);
++			policy->kobj = NULL;
++			psysinfo->cpu_policy = NULL;
++		}
++	}
++
++out:
++	return;
++}
+ 
+ static int cpufreq_remove_dev(struct device *dev, struct subsys_interface *sif)
+ {
+@@ -1238,7 +1379,6 @@ static int cpufreq_remove_dev(struct device *dev, struct subsys_interface *sif)
+ 	return retval;
+ }
+ 
+-
+ static void handle_update(struct work_struct *work)
+ {
+ 	struct cpufreq_policy *policy =
+@@ -1921,6 +2061,8 @@ int cpufreq_register_driver(struct cpufreq_driver *driver_data)
+ {
+ 	unsigned long flags;
+ 	int ret;
++	unsigned int cpu;
++	struct device *dev;
+ 
+ 	if (cpufreq_disabled())
+ 		return -ENODEV;
+@@ -1942,6 +2084,17 @@ int cpufreq_register_driver(struct cpufreq_driver *driver_data)
+ 	cpufreq_driver = driver_data;
+ 	spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
+ 
++	for_each_possible_cpu(cpu) {
++		dev = get_cpu_device(cpu);
++		if (dev) {
++			ret = cpufreq_add_dev_sysfs(cpu,
++					&cpu_sysnode[cpu].cpu_kobj, dev);
++			if (ret)
++				goto err_if_unreg;
++			kobject_uevent(&cpu_sysnode[cpu].cpu_kobj, KOBJ_ADD);
++		}
++	}
++
+ 	ret = subsys_interface_register(&cpufreq_interface);
+ 	if (ret)
+ 		goto err_null_driver;
+@@ -2002,6 +2155,8 @@ int cpufreq_unregister_driver(struct cpufreq_driver *driver)
+ 
+ 	spin_lock_irqsave(&cpufreq_driver_lock, flags);
+ 	cpufreq_driver = NULL;
++	/* remove percpu sysfs node */
++	cpufreq_remove_dev_sysfs();
+ 	spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
+ 
+ 	return 0;
+@@ -2011,6 +2166,9 @@ EXPORT_SYMBOL_GPL(cpufreq_unregister_driver);
+ static int __init cpufreq_core_init(void)
+ {
+ 	int cpu;
++#ifdef CONFIG_CPU_VOLTAGE_TABLE
++	int rc;
++#endif	/* CONFIG_CPU_VOLTAGE_TABLE */
+ 
+ 	if (cpufreq_disabled())
+ 		return -ENODEV;
+@@ -2029,6 +2187,9 @@ static int __init cpufreq_core_init(void)
+ 	cpufreq_global_kobject->kset = cpufreq_kset;
+ 
+ 	register_syscore_ops(&cpufreq_syscore_ops);
++#ifdef CONFIG_CPU_VOLTAGE_TABLE
++	rc = sysfs_create_group(cpufreq_global_kobject, &vddtbl_attr_group);
++#endif	/* CONFIG_CPU_VOLTAGE_TABLE */
+ 
+ 	return 0;
+ }
+diff --git a/drivers/cpufreq/cpufreq_stats.c b/drivers/cpufreq/cpufreq_stats.c
+index 1b421c7..2b48227 100644
+--- a/drivers/cpufreq/cpufreq_stats.c
++++ b/drivers/cpufreq/cpufreq_stats.c
+@@ -184,7 +184,7 @@ static void cpufreq_stats_free_sysfs(unsigned int cpu)
+ {
+ 	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
+ 	if (policy && policy->cpu == cpu)
+-		sysfs_remove_group(&policy->kobj, &stats_attr_group);
++		sysfs_remove_group(policy->kobj, &stats_attr_group);
+ 	if (policy)
+ 		cpufreq_cpu_put(policy);
+ }
+@@ -211,7 +211,7 @@ static int cpufreq_stats_create_table(struct cpufreq_policy *policy,
+ 		goto error_get_fail;
+ 	}
+ 
+-	ret = sysfs_create_group(&data->kobj, &stats_attr_group);
++	ret = sysfs_create_group(data->kobj, &stats_attr_group);
+ 	if (ret)
+ 		goto error_out;
+ 
+diff --git a/drivers/gpu/ion/Makefile b/drivers/gpu/ion/Makefile
+index 51349f6..3406731 100644
+--- a/drivers/gpu/ion/Makefile
++++ b/drivers/gpu/ion/Makefile
+@@ -1,3 +1,4 @@
++ccflags-y := -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ obj-$(CONFIG_ION) +=	ion.o ion_heap.o ion_system_heap.o ion_carveout_heap.o ion_iommu_heap.o ion_cp_heap.o
+ obj-$(CONFIG_CMA) += ion_cma_heap.o
+ obj-$(CONFIG_ION_TEGRA) += tegra/
+diff --git a/drivers/gpu/ion/msm/Makefile b/drivers/gpu/ion/msm/Makefile
+index 1893405..36c6a40 100644
+--- a/drivers/gpu/ion/msm/Makefile
++++ b/drivers/gpu/ion/msm/Makefile
+@@ -1 +1,2 @@
++ccflags-y := -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ obj-y += msm_ion.o ion_cp_common.o
+diff --git a/drivers/gpu/msm/Makefile b/drivers/gpu/msm/Makefile
+index fec5363..9dc9dea 100644
+--- a/drivers/gpu/msm/Makefile
++++ b/drivers/gpu/msm/Makefile
+@@ -1,4 +1,4 @@
+-ccflags-y := -Iinclude/drm -Idrivers/gpu/msm
++ccflags-y := -Iinclude/drm -Idrivers/gpu/msm -mcpu=cortex-a15 -mfpu=neon-vfpv4
+ 
+ msm_kgsl_core-y = \
+ 	kgsl.o \
+diff --git a/drivers/gpu/msm/kgsl_pwrctrl.c b/drivers/gpu/msm/kgsl_pwrctrl.c
+index 08ec847..51ff6ee 100644
+--- a/drivers/gpu/msm/kgsl_pwrctrl.c
++++ b/drivers/gpu/msm/kgsl_pwrctrl.c
+@@ -24,6 +24,7 @@
+ #include "kgsl_device.h"
+ #include "kgsl_trace.h"
+ #include "kgsl_sharedmem.h"
++#include <mach/kgsl.h>
+ 
+ #define KGSL_PWRFLAGS_POWER_ON 0
+ #define KGSL_PWRFLAGS_CLK_ON   1
+@@ -34,6 +35,8 @@
+ #define UPDATE_BUSY_VAL		1000000
+ #define UPDATE_BUSY		50
+ 
++unsigned long internal_max = 450000000;
++
+ struct clk_pair {
+ 	const char *name;
+ 	uint map;
+@@ -372,6 +375,9 @@ static int _get_nearest_pwrlevel(struct kgsl_pwrctrl *pwr, unsigned int clock)
+ 	return -ERANGE;
+ }
+ 
++extern void SetGPUpll_config(u32 loc, unsigned long freq);
++
++/* 使pll15的值跟据gpu频率进行自适应 */
+ static int kgsl_pwrctrl_max_gpuclk_store(struct device *dev,
+ 					 struct device_attribute *attr,
+ 					 const char *buf, size_t count)
+@@ -390,6 +396,37 @@ static int kgsl_pwrctrl_max_gpuclk_store(struct device *dev,
+ 	if (ret != 1)
+ 		return count;
+ 
++	if (max_gpu) {
++
++		if (val == 450000000) {
++			SetGPUpll_config(0x21, val);
++		}
++		else if (val == 409500000) {
++			SetGPUpll_config(0x1E, val);
++		}
++		else if (val == 477000000) {
++			SetGPUpll_config(0x23, val);
++		}
++		else if (val == 490500000) {
++			SetGPUpll_config(0x24, val);
++		}
++		else if (val == 504000000) {
++			SetGPUpll_config(0x25, val);
++		}
++		else if (val == 531000000) {
++			SetGPUpll_config(0x27, val);
++		}
++		else if (val == 558000000) {
++			SetGPUpll_config(0x29, val);
++		}
++		else if (val == 585000000) {
++			SetGPUpll_config(0x2B, val);
++		}
++
++		internal_max = val;
++
++	}
++
+ 	mutex_lock(&device->mutex);
+ 	level = _get_nearest_pwrlevel(pwr, val);
+ 	if (level < 0)
+@@ -420,8 +457,13 @@ static int kgsl_pwrctrl_max_gpuclk_show(struct device *dev,
+ 	if (device == NULL)
+ 		return 0;
+ 	pwr = &device->pwrctrl;
+-	return snprintf(buf, PAGE_SIZE, "%d\n",
+-			pwr->pwrlevels[pwr->thermal_pwrlevel].gpu_freq);
++
++	if (max_gpu)
++		return snprintf(buf, PAGE_SIZE, "%ld\n",
++				internal_max);
++	else
++		return snprintf(buf, PAGE_SIZE, "%d\n",
++				pwr->pwrlevels[pwr->thermal_pwrlevel].gpu_freq);
+ }
+ 
+ static int kgsl_pwrctrl_gpuclk_store(struct device *dev,
+@@ -460,8 +502,12 @@ static int kgsl_pwrctrl_gpuclk_show(struct device *dev,
+ 	if (device == NULL)
+ 		return 0;
+ 	pwr = &device->pwrctrl;
+-	return snprintf(buf, PAGE_SIZE, "%d\n",
++	if (pwr->active_pwrlevel != 0 || !max_gpu)
++		return snprintf(buf, PAGE_SIZE, "%d\n",
+ 			pwr->pwrlevels[pwr->active_pwrlevel].gpu_freq);
++	else
++		return snprintf(buf, PAGE_SIZE, "%ld\n",
++			internal_max);
+ }
+ 
+ static int kgsl_pwrctrl_pwrnap_store(struct device *dev,
+@@ -604,6 +650,7 @@ static int kgsl_pwrctrl_gputop_show(struct device *dev,
+ 	return (unsigned int) (ptr - buf);
+ }
+ 
++/* 增加gpu频率表的频率档次 */
+ static int kgsl_pwrctrl_gpu_available_frequencies_show(
+ 					struct device *dev,
+ 					struct device_attribute *attr,
+@@ -617,8 +664,20 @@ static int kgsl_pwrctrl_gpu_available_frequencies_show(
+ 		return 0;
+ 	pwr = &device->pwrctrl;
+ 	for (index = 0; index < pwr->num_pwrlevels - 1; index++)
+-		num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",
+-		pwr->pwrlevels[index].gpu_freq);
++
++		if (index == 0 && max_gpu > 0)
++		{
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",585000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",558000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",531000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",504000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",490500000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",477000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",450000000);
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",409500000);
++		}
++		else
++			num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",pwr->pwrlevels[index].gpu_freq);
+ 	buf[num_chars++] = '\n';
+ 	return num_chars;
+ }
+diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
+index 18d6f87..3ddda98 100644
+--- a/drivers/input/touchscreen/Kconfig
++++ b/drivers/input/touchscreen/Kconfig
+@@ -67,6 +67,12 @@ config TOUCHSCREEN_ATMEL_MAXTOUCH
+          To compile this driver as a module, choose M here: the
+          module will be called maXTouch.
+ 
++config S2W
++	bool "Enable  DoubleTap2wake and Sweep2wake for mi2/2s"
++	default n
++	help
++	  DoubleTap2wake and Sweep2wake for mi2/2s
++
+ config TOUCHSCREEN_AD7879
+ 	tristate "Analog Devices AD7879-1/AD7889-1 touchscreen interface"
+ 	help
+diff --git a/drivers/input/touchscreen/atmel_mxt_ts.c b/drivers/input/touchscreen/atmel_mxt_ts.c
+index 51bac4b..7acc914 100644
+--- a/drivers/input/touchscreen/atmel_mxt_ts.c
++++ b/drivers/input/touchscreen/atmel_mxt_ts.c
+@@ -64,6 +64,36 @@ static const struct mxt_address_pair mxt_slave_addresses[] = {
+ 
+ enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
+ 
++#ifdef CONFIG_S2W
++
++struct mxt_wake_common {
++	int suspended;
++	int keyarray_ctrl;
++};
++
++struct mxt_dt2w {
++	struct work_struct work;
++	struct input_dev *pwrdev;
++
++	int enabled;
++	unsigned int timeout_max;
++	unsigned int timeout_min;
++	unsigned int delta_x;
++	unsigned int delta_y;
++};
++
++struct mxt_s2w {
++	struct work_struct work;
++	struct input_dev *pwrdev;
++
++	int enabled;
++	unsigned int start;
++	unsigned int end;
++	bool started;
++};
++
++#endif
++
+ /* Firmware */
+ #define MXT_FW_NAME		"maxtouch.fw"
+ 
+@@ -315,7 +345,22 @@ enum mxt_device_state { INIT, APPMODE, BOOTLOADER };
+ /* Touchscreen absolute values */
+ #define MXT_MAX_AREA		0xff
+ 
+-#define MXT_MAX_FINGER		16
++#define MXT_MAX_FINGER		10
++
++/* 双击/滑动唤醒 */
++#ifdef CONFIG_S2W
++
++#define DT2W_ENABLED 0 /* 默认是否启用 */
++#define DT2W_TIMEOUT_MAX 350 /* 两次点击的最大时间间隔 */
++#define DT2W_TIMEOUT_MIN 100 /* 两次点击的最小时间间隔 */
++#define DT2W_DELTA_X 50 /* 点击的横向分辨率大小 */
++#define DT2W_DELTA_Y 50 /* 点击的纵向分辨率大小 */
++
++#define S2W_ENABLED 0 /* 默认是否启用 */
++#define S2W_START -1 /* 滑动唤醒起始坐标 */
++#define S2W_END -1 /* 结束坐标 */
++
++#endif
+ 
+ #define T7_DATA_SIZE		3
+ #define T8_DATA_SIZE		10
+@@ -422,8 +467,340 @@ struct mxt_data {
+ 	bool is_crc_got;
+ 	bool is_key_verify;
+ 	bool disable_keys;
++#ifdef CONFIG_S2W
++	struct mxt_wake_common wake_common;
++	struct mxt_dt2w dt2w;
++	struct mxt_s2w s2w;
++};
++
++static ssize_t dt2w_enabled_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++	struct mxt_data *data = dev_get_drvdata(dev);
++
++	return sprintf(buf, "%d\n", data->dt2w.enabled);
++}
++
++static ssize_t s2w_enabled_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++	struct mxt_data *data = dev_get_drvdata(dev);
++
++	return sprintf(buf, "%d\n", data->s2w.enabled);
++}
++
++static ssize_t dt2w_enabled_store(struct device *dev,
++				struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct mxt_data *data = dev_get_drvdata(dev);
++	int val;
++
++	if (data->wake_common.suspended) {
++		dev_err(dev, "%s: the screen must be on\n", __func__);
++		return -EPERM;
++	}
++
++	sscanf(buf, "%d", &val);
++	if (val != 0 && data->dt2w.enabled == 0) {
++		data->dt2w.enabled = 1;
++		irq_set_irq_wake(data->irq, 1);
++	} else if (data->dt2w.enabled == 1) {
++		data->dt2w.enabled = 0;
++		irq_set_irq_wake(data->irq, 0);
++	}
++
++	return count;
++}
++
++static ssize_t s2w_enabled_store(struct device *dev,
++				struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct mxt_data *data = dev_get_drvdata(dev);
++	int val;
++
++	if (data->wake_common.suspended) {
++		dev_err(dev, "%s: the screen must be on\n", __func__);
++		return -EPERM;
++	}
++
++	sscanf(buf, "%d", &val);
++	if (val != 0 && data->s2w.enabled == 0) {
++		data->s2w.enabled = 1;
++		irq_set_irq_wake(data->irq, 1);
++	} else if (data->s2w.enabled == 1) {
++		data->s2w.enabled = 0;
++		irq_set_irq_wake(data->irq, 0);
++	}
++
++	return count;
++}
++
++static DEVICE_ATTR(dt2w_enabled, S_IWUSR | S_IRUGO,
++		dt2w_enabled_show, dt2w_enabled_store);
++
++static DEVICE_ATTR(s2w_enabled, S_IWUSR | S_IRUGO,
++		s2w_enabled_show,s2w_enabled_store);
++
++#define dt2w_dev_attr(_dev_name, _name_show, _name_store, _ret_val)	\
++				static ssize_t _name_show(struct device *dev,		\
++				struct device_attribute *attr, char *buf)			\
++{																	\
++	struct mxt_data *data = dev_get_drvdata(dev);					\
++	return sprintf(buf, "%u\n", _ret_val);							\
++}																	\
++static ssize_t _name_store(struct device *dev,						\
++				struct device_attribute *attr,						\
++				const char *buf, size_t count)						\
++{																	\
++	struct mxt_data *data = dev_get_drvdata(dev);					\
++	sscanf(buf, "%u", &_ret_val);									\
++	return count;													\
++}																	\
++static DEVICE_ATTR(_dev_name, S_IWUSR | S_IRUGO,					\
++				_name_show, _name_store);
++
++dt2w_dev_attr(dt2w_timeout_max, dt2w_timeout_max_show,
++				dt2w_timeout_max_store, data->dt2w.timeout_max)
++dt2w_dev_attr(dt2w_timeout_min, dt2w_timeout_min_show,
++				dt2w_timeout_min_store, data->dt2w.timeout_min)
++dt2w_dev_attr(dt2w_delta_x, dt2w_delta_x_show,
++				dt2w_delta_x_store, data->dt2w.delta_x)
++dt2w_dev_attr(dt2w_delta_y, dt2w_delta_y_show,
++				dt2w_delta_y_store, data->dt2w.delta_y)
++
++
++#define s2w_dev_attr(_dev_name, _name_show, _name_store, _ret_val)	\
++static ssize_t _name_show(struct device *dev,						\
++				struct device_attribute *attr, char *buf)			\
++{																	\
++	struct mxt_data *data = dev_get_drvdata(dev);					\
++	return sprintf(buf, "%u\n", _ret_val);							\
++}																	\
++static ssize_t _name_store(struct device *dev,						\
++				struct device_attribute *attr,						\
++				const char *buf, size_t count)						\
++{																	\
++	struct mxt_data *data = dev_get_drvdata(dev);					\
++	sscanf(buf, "%u", &_ret_val);									\
++	return count;													\
++}																	\
++static DEVICE_ATTR(_dev_name, S_IWUSR | S_IRUGO,					\
++				_name_show, _name_store);
++
++s2w_dev_attr(s2w_start, s2w_start_show, s2w_start_store, data->s2w.start)
++s2w_dev_attr(s2w_end, s2w_end_show, s2w_end_store, data->s2w.end)
++
++static struct attribute *s2w_attrs[] = {
++	&dev_attr_s2w_enabled.attr,
++	&dev_attr_s2w_start.attr,
++	&dev_attr_s2w_end.attr,
++	NULL
++};
++
++
++static struct attribute *dt2w_attrs[] = {
++	&dev_attr_dt2w_enabled.attr,
++	&dev_attr_dt2w_timeout_max.attr,
++	&dev_attr_dt2w_timeout_min.attr,
++	&dev_attr_dt2w_delta_x.attr,
++	&dev_attr_dt2w_delta_y.attr,
++	NULL
+ };
+ 
++static const struct attribute_group dt2w_attr_group = {
++	.attrs = dt2w_attrs,
++};
++
++static const struct attribute_group s2w_attr_group = {
++	.attrs = s2w_attrs,
++};
++
++static void dt2w_presspwr_work(struct work_struct *work)
++{
++	struct mxt_dt2w *dt2w = container_of(work, struct mxt_dt2w, work);
++	struct input_dev *pwrdev = dt2w->pwrdev;
++
++	if (!mutex_trylock(&pwrdev->mutex))
++		return;
++	input_event(pwrdev, EV_KEY, KEY_POWER, 1);
++	input_event(pwrdev, EV_SYN, 0, 0);
++	msleep(30);
++	input_event(pwrdev, EV_KEY, KEY_POWER, 0);
++	input_event(pwrdev, EV_SYN, 0, 0);
++	msleep(30);
++	mutex_unlock(&pwrdev->mutex);
++}
++
++static void s2w_presspwr_work(struct work_struct *work)
++{
++	struct mxt_s2w *s2w = container_of(work, struct mxt_s2w, work);
++	struct input_dev *pwrdev = s2w->pwrdev;
++
++	if (!mutex_trylock(&pwrdev->mutex))
++		return;
++	input_event(pwrdev, EV_KEY, KEY_POWER, 1);
++	input_event(pwrdev, EV_SYN, 0, 0);
++	msleep(30);
++	input_event(pwrdev, EV_KEY, KEY_POWER, 0);
++	input_event(pwrdev, EV_SYN, 0, 0);
++	msleep(30);
++	mutex_unlock(&pwrdev->mutex);
++}
++
++static void s2w_detect(struct mxt_data *data,
++				struct mxt_message *message, int id)
++{
++	static unsigned long s2w_time = 0;
++	static int s2w_id = 0;
++	int x;
++	int y;
++	u8 status = message->message[0];
++
++	if(data->s2w.started == false)
++	{
++		x = (message->message[1] << 4) | ((message->message[3] >> 4) & 0xf);
++		y = (message->message[2] << 4) | ((message->message[3] & 0xf));
++
++		if (data->pdata->panel_maxx < 1024)
++			x >>= 2;
++			//x = x >> 2;
++		if (data->pdata->panel_maxy < 1024)
++			y >>= 2;
++			//y = y >> 2;
++
++		// left 2 right check start point
++		if (x < 140 && y > 140 && y < 1140)
++		{
++			data->s2w.started = true;
++			data->s2w.start = 0; // l2r int
++		}
++		// right 2 left check start point
++		if (x > 660 && y > 140 && y < 1140)
++		{
++			data->s2w.started = true;
++			data->s2w.start = 1; // r2l int
++		}
++		// top 2 bottom check start point
++		if (y < 140 && x > 140 && x < 660)
++		{
++			data->s2w.started = true;
++			data->s2w.start = 2; // t2b int
++		}
++		// bottom 2 top check start point
++		if (y > 1140 && x > 140 && x < 660)
++		{
++			data->s2w.started = true;
++			data->s2w.start = 3; // b2t int
++		}
++		return;
++	}
++	else
++	{
++		/* If different finger, start over */
++		if (s2w_id != id) {
++			s2w_id = id;
++			s2w_time = 0;
++			data->s2w.started = false;
++			return;
++		}
++
++		if (!(status & MXT_RELEASE))
++			return;
++
++		x = (message->message[1] << 4) | ((message->message[3] >> 4) & 0xf);
++		y = (message->message[2] << 4) | ((message->message[3] & 0xf));
++		if (data->pdata->panel_maxx < 1024)
++			x >>= 2;
++			//x = x >> 2;
++		if (data->pdata->panel_maxy < 1024)
++			y >>= 2;
++			//y = y >> 2;
++
++		// left 2 right check end point
++		if (x > 660 && y > 140 && y < 1140)
++		{
++			data->s2w.end = 0; // l2r int
++		}
++		// right 2 left check end point
++		if (x < 140 && y > 140 && y < 1140)
++		{
++			data->s2w.end = 1; // r2l int
++		}
++		// top 2 bottom check end point
++		if (y > 1140 && x > 140 && x < 660)
++		{
++			data->s2w.end = 2; // t2b int
++		}
++		// bottom 2 top check end point
++		if (y < 140 && x > 140 && x < 660)
++		{
++			data->s2w.end = 3; // b2t int
++		}
++
++		if(data->s2w.start == data->s2w.end)
++		{
++			data->s2w.started = false;
++			schedule_work(&data->s2w.work);
++		}
++		else
++		{
++			data->s2w.started = false;
++		}
++	}
++}
++
++static void dt2w_detect(struct mxt_data *data,
++				struct mxt_message *message, int id)
++{
++	static int dt2w_x = 0;
++	static int dt2w_y = 0;
++	static unsigned long dt2w_time = 0;
++	static int dt2w_id = 0;
++	int x;
++	int y;
++	unsigned long now = jiffies;
++	unsigned int delta_x;
++	unsigned int delta_y;
++	unsigned long delta_t;
++	u8 status = message->message[0];
++
++	/* If different finger, start over */
++	if (dt2w_id != id) {
++		dt2w_id = id;
++		dt2w_time = 0;
++		return;
++	}
++
++
++	if (!(status & MXT_RELEASE))
++		return;
++
++	x = (message->message[1] << 4) | ((message->message[3] >> 4) & 0xf);
++	y = (message->message[2] << 4) | ((message->message[3] & 0xf));
++	if (data->pdata->panel_maxx < 1024)
++		x >>= 2;
++		//x = x >> 2;
++	if (data->pdata->panel_maxy < 1024)
++		y >>= 2;
++		//y = y >> 2;
++
++	delta_x = abs(x - dt2w_x);
++	delta_y = abs(y - dt2w_y);
++	delta_t = jiffies_to_msecs(now - dt2w_time);
++
++	if (delta_t > data->dt2w.timeout_min &&
++		delta_t < data->dt2w.timeout_max)
++	if (delta_x < data->dt2w.delta_x &&
++		delta_y < data->dt2w.delta_y)
++	schedule_work(&data->dt2w.work);
++
++	dt2w_id = id;
++	dt2w_x = x;
++	dt2w_y = y;
++	dt2w_time = jiffies;
++}
++#endif
++
+ static struct dentry *debug_base;
+ 
+ static bool mxt_object_writable(unsigned int type)
+@@ -1227,9 +1604,23 @@ static irqreturn_t mxt_interrupt(int irq, void *dev_id)
+ 		/* check whether report id is part of T9 or T15 */
+ 		id = reportid - data->t9_min_reportid;
+ 
++#ifdef CONFIG_S2W
++		if (reportid >= data->t9_min_reportid &&
++					reportid <= data->t9_max_reportid) {
++			if(data->wake_common.suspended) {
++				if (data->dt2w.enabled)
++						dt2w_detect(data, &message, id);
++				if(data->s2w.enabled)
++						s2w_detect(data, &message, id);
++			}
++			else
++				mxt_input_touchevent(data, &message, id);
++		}
++#else
+ 		if (reportid >= data->t9_min_reportid &&
+ 					reportid <= data->t9_max_reportid)
+ 			mxt_input_touchevent(data, &message, id);
++#endif
+ 		else if (reportid >= data->t15_min_reportid &&
+ 					reportid <= data->t15_max_reportid)
+ 			mxt_handle_key_array(data, &message);
+@@ -1788,7 +2179,11 @@ static int mxt_initialize(struct mxt_data *data)
+ 		error = mxt_update_fw_for_abnormal(data, BOOTLOADER_MODE);
+ 		if (error)
+ 			return error;
++#ifdef CONFIG_S2W
++		goto out;
++#else
+ 		return 0;
++#endif
+ 	}
+ 
+ 	dev_info(&client->dev,
+@@ -1856,7 +2251,11 @@ static int mxt_initialize(struct mxt_data *data)
+ 		error = mxt_update_fw_for_abnormal(data, NO_CONFIG_MODE);
+ 		if (error)
+ 			return error;
++#ifdef CONFIG_S2W
++		goto out;
++#else
+ 		return 0;
++#endif
+ 	}
+ 
+ 	error = __mxt_read_reg(client, data->t7_start_addr,
+@@ -1890,6 +2289,34 @@ static int mxt_initialize(struct mxt_data *data)
+ 			"Matrix X Size: %d Matrix Y Size: %d\n",
+ 			info->matrix_xsize, info->matrix_ysize);
+ 
++#ifdef CONFIG_S2W
++	// wake common
++	data->wake_common.suspended = 0;
++
++	error = mxt_read_object(data,
++					MXT_TOUCH_KEYARRAY_T15, MXT_TOUCH_CTRL, &val);
++	if (error) {
++		dev_err(&client->dev, "Failed to get keyarray ctrl\n");
++		data->wake_common.keyarray_ctrl = 0;
++	} else
++		data->wake_common.keyarray_ctrl = val;
++
++	// sleep2wake
++	data->s2w.enabled = S2W_ENABLED;
++
++	// doubletape2wake
++	data->dt2w.enabled = DT2W_ENABLED;
++	data->dt2w.timeout_max = DT2W_TIMEOUT_MAX;
++	data->dt2w.timeout_min = DT2W_TIMEOUT_MIN;
++	data->dt2w.delta_x = DT2W_DELTA_X;
++	data->dt2w.delta_y = DT2W_DELTA_Y;
++
++	if (data->s2w.enabled || data->dt2w.enabled)
++		irq_set_irq_wake(data->irq, 1);
++
++
++out:
++#endif
+ 	return 0;
+ 
+ free_object_table:
+@@ -2179,6 +2606,18 @@ static ssize_t mxt_update_fw_store(struct device *dev,
+ 	u8 bootldr_id;
+ 	struct input_dev *input_dev = data->input_dev;
+ 
++#ifdef CONFIG_S2W
++	if (data->dt2w.enabled) {
++		dev_err(dev, "Disable DoubleTap2Wake first\n");
++		return -EPERM;
++	}
++
++	if (data->s2w.enabled) {
++		dev_err(dev, "Disable Sweep2Wake first\n");
++		return -EPERM;
++	}
++#endif
++
+ 	if (count > 0) {
+ 		fw_name = buf;
+ 		dev_info(dev, "Identify firmware name :%s \n", fw_name);
+@@ -2866,6 +3305,18 @@ static int mxt_suspend(struct device *dev)
+ 	struct input_dev *input_dev = data->input_dev;
+ 	int error;
+ 
++#ifdef CONFIG_S2W
++	data->wake_common.suspended = 1;
++	data->s2w.started = false;
++	if (data->dt2w.enabled || data->s2w.enabled) {
++		/* Disable touchkeys */
++		mxt_write_object(data, MXT_TOUCH_KEYARRAY_T15,
++						MXT_TOUCH_CTRL, 0);
++
++		return 0;
++	}
++#endif
++
+ 	disable_irq(data->irq);
+ 
+ 	mutex_lock(&input_dev->mutex);
+@@ -2907,6 +3358,20 @@ static int mxt_resume(struct device *dev)
+ 	struct input_dev *input_dev = data->input_dev;
+ 	int error;
+ 
++#ifdef CONFIG_S2W
++	data->wake_common.suspended = 0;
++	if (data->dt2w.enabled || data->s2w.enabled) {
++		/* Enable touchkeys */
++		mxt_write_object(data, MXT_TOUCH_KEYARRAY_T15,
++				MXT_TOUCH_CTRL, data->wake_common.keyarray_ctrl);
++
++		/* Even if the chip hasn't been in deep sleep,
++		 * a calibration could be required. */
++		mxt_do_force_calibration(data);
++		return 0;
++	}
++#endif
++
+ 	/* put regulators in high power mode */
+ 	error = mxt_regulator_lpm(data, false);
+ 	if (error < 0) {
+@@ -3241,6 +3706,57 @@ static int __devinit mxt_probe(struct i2c_client *client,
+ 	if (error)
+ 		goto err_unregister_device;
+ 
++#ifdef CONFIG_S2W
++	INIT_WORK(&data->dt2w.work, dt2w_presspwr_work);
++
++	data->dt2w.pwrdev = input_allocate_device();
++	if (!data->dt2w.pwrdev) {
++		dev_err(&client->dev, "Can't allocate power button\n");
++		goto err_free_dt2w;
++	}
++
++	input_set_capability(data->dt2w.pwrdev, EV_KEY, KEY_POWER);
++	data->dt2w.pwrdev->name = "dt2w_pwrkey";
++	data->dt2w.pwrdev->phys = "dt2w_pwrkey/input0";
++
++	error = input_register_device(data->dt2w.pwrdev);
++	if (error) {
++		dev_err(&client->dev, "Can't register power button: %d\n", error);
++		goto err_free_dt2w;
++	}
++
++	error = sysfs_create_group(&client->dev.kobj, &dt2w_attr_group);
++	if (error) {
++		dev_err(&client->dev, "Can't create dt2w device group: %d\n", error);
++		goto err_unregister_dt2w;
++	}
++
++
++	INIT_WORK(&data->s2w.work, s2w_presspwr_work);
++
++	data->s2w.pwrdev = input_allocate_device();
++	if (!data->s2w.pwrdev) {
++		dev_err(&client->dev, "Can't allocate power button\n");
++		goto err_free_dt2w;
++	}
++
++	input_set_capability(data->s2w.pwrdev, EV_KEY, KEY_POWER);
++	data->s2w.pwrdev->name = "s2w_pwrkey";
++	data->s2w.pwrdev->phys = "s2w_pwrkey/input0";
++
++	error = input_register_device(data->s2w.pwrdev);
++	if (error) {
++		dev_err(&client->dev, "Can't register power button: %d\n", error);
++		goto err_free_s2w;
++	}
++
++	error = sysfs_create_group(&client->dev.kobj, &s2w_attr_group);
++	if (error) {
++		dev_err(&client->dev, "Can't create s2w device group: %d\n", error);
++		goto err_unregister_s2w;
++	}
++#endif
++
+ #if defined(CONFIG_HAS_EARLYSUSPEND)
+ 	data->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN +
+ 						MXT_SUSPEND_LEVEL;
+@@ -3271,6 +3787,25 @@ static int __devinit mxt_probe(struct i2c_client *client,
+ 	mxt_handle_extra_touchdata(data, MXT_REFERENCE_DATA);
+ 	return 0;
+ 
++#ifdef CONFIG_S2W
++err_unregister_dt2w:
++	input_unregister_device(data->dt2w.pwrdev);
++err_free_dt2w:
++	input_free_device(data->dt2w.pwrdev);
++	data->dt2w.pwrdev = NULL;
++	/* Force disable */
++	data->dt2w.enabled = 0;
++	return error;
++err_unregister_s2w:
++	input_unregister_device(data->s2w.pwrdev);
++	err_free_s2w:
++	input_free_device(data->s2w.pwrdev);
++	data->s2w.pwrdev = NULL;
++	/* Force disable */
++	data->s2w.enabled = 0;
++	return error;
++#endif
++
+ err_remove_sysfs_group:
+ 	sysfs_remove_group(&client->dev.kobj, &mxt_attr_group);
+ err_unregister_device:
+@@ -3311,6 +3846,13 @@ static int __devexit mxt_remove(struct i2c_client *client)
+ 	cancel_delayed_work_sync(&data->force_calibrate_delayed_work);
+ 	cancel_delayed_work_sync(&data->disable_antipalm_delayed_work);
+ 	free_irq(data->irq, data);
++
++#ifdef CONFIG_S2W
++	sysfs_remove_group(&client->dev.kobj, &dt2w_attr_group);
++	sysfs_remove_group(&client->dev.kobj, &s2w_attr_group);
++	input_unregister_device(data->dt2w.pwrdev);
++	input_unregister_device(data->s2w.pwrdev);
++#endif
+ 	input_unregister_device(data->input_dev);
+ #if defined(CONFIG_HAS_EARLYSUSPEND)
+ 	unregister_early_suspend(&data->early_suspend);
+diff --git a/drivers/staging/prima/Makefile b/drivers/staging/prima/Makefile
+index 24c09a9..d6e24ac 100644
+--- a/drivers/staging/prima/Makefile
++++ b/drivers/staging/prima/Makefile
+@@ -555,17 +555,17 @@ endif
+ CDEFINES += -DWLAN_AUTOGEN_MACADDR_FEATURE
+ 
+ ifeq ($(CONFIG_ARCH_MSM8960),y)
+-EXTRA_CFLAGS += -march=armv7-a
++EXTRA_CFLAGS +=
+ CDEFINES += -DMSM_PLATFORM_8960
+ endif
+ 
+ ifeq ($(CONFIG_ARCH_MSM8X60),y)
+-EXTRA_CFLAGS += -march=armv7-a
++EXTRA_CFLAGS +=
+ CDEFINES += -DMSM_PLATFORM_8660
+ endif
+ 
+ ifeq ($(CONFIG_MACH_MSM7X30_SURF),y)
+-EXTRA_CFLAGS += -march=armv7-a
++EXTRA_CFLAGS +=
+ CDEFINES += -DMSM_PLATFORM_7x30
+ endif
+ 
+diff --git a/include/linux/cpufreq.h b/include/linux/cpufreq.h
+index 6723f48..6589478 100644
+--- a/include/linux/cpufreq.h
++++ b/include/linux/cpufreq.h
+@@ -110,10 +110,16 @@ struct cpufreq_policy {
+ 
+ 	struct cpufreq_real_policy	user_policy;
+ 
+-	struct kobject		kobj;
++	struct kobject		*kobj;
+ 	struct completion	kobj_unregister;
+ };
+ 
++/* contains per cpu sysfs info ./sys/devices/ssytem/cpu/cpu#/cpufreq */
++struct cpufreq_cpu_sysinfo {
++	struct cpufreq_policy *cpu_policy; /* policy for online cpu */
++	struct kobject cpu_kobj; /* per cpu kobject */
++};
++
+ #define CPUFREQ_ADJUST		(0)
+ #define CPUFREQ_INCOMPATIBLE	(1)
+ #define CPUFREQ_NOTIFY		(2)
+@@ -375,6 +381,9 @@ extern struct cpufreq_governor cpufreq_gov_conservative;
+ #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE)
+ extern struct cpufreq_governor cpufreq_gov_interactive;
+ #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_interactive)
++#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTELLIACTIVE)
++extern struct cpufreq_governor cpufreq_gov_intelliactive;
++#define CPUFREQ_DEFAULT_GOVERNOR        (&cpufreq_gov_intelliactive)
+ #endif
+ 
+ 
