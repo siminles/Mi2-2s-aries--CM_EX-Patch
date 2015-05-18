@@ -1,6 +1,6 @@
  Makefile                                  |   4 +-
  arch/arm/Makefile                         |   1 +
- arch/arm/configs/aries-perf-usr_defconfig | 140 +++++++-
+ arch/arm/configs/aries-perf-usr_defconfig | 142 +++++++-
  arch/arm/mach-msm/Kconfig                 |  18 +
  arch/arm/mach-msm/Makefile                |   2 +
  arch/arm/mach-msm/acpuclock-8064.c        | 337 +++++++++---------
@@ -26,7 +26,7 @@
  drivers/input/touchscreen/atmel_mxt_ts.c  | 544 +++++++++++++++++++++++++++++-
  drivers/staging/prima/Makefile            |   6 +-
  include/linux/cpufreq.h                   |  11 +-
- 28 files changed, 1507 insertions(+), 282 deletions(-)
+ 28 files changed, 1508 insertions(+), 283 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index a687963..53e4e3b 100644
@@ -60,7 +60,7 @@ index d9f4657..4283596 100644
 diff --git a/arch/arm/configs/aries-perf-usr_defconfig b/arch/arm/configs/aries-perf-usr_defconfig
 old mode 100644
 new mode 100755
-index 5d3d71a..dd2fcfc
+index 5d3d71a..ae111ed
 --- a/arch/arm/configs/aries-perf-usr_defconfig
 +++ b/arch/arm/configs/aries-perf-usr_defconfig
 @@ -18,7 +18,7 @@ CONFIG_NAMESPACES=y
@@ -146,6 +146,15 @@ index 5d3d71a..dd2fcfc
  CONFIG_SMP=y
  # UART
  CONFIG_MSM_UART_HS_USE_HS=y
+@@ -98,7 +126,7 @@ CONFIG_PREEMPT=y
+ CONFIG_AEABI=y
+ CONFIG_OABI_COMPAT=y
+ CONFIG_HIGHMEM=y
+-CONFIG_VMALLOC_RESERVE=0x19000000
++# CONFIG_VMALLOC_RESERVE=0x19000000 is not set
+ CONFIG_COMPACTION=y
+ CONFIG_CC_STACKPROTECTOR=y
+ CONFIG_CP_ACCESS=y
 @@ -110,6 +138,7 @@ CONFIG_CPU_FREQ_GOV_USERSPACE=y
  CONFIG_CPU_FREQ_GOV_ONDEMAND=y
  CONFIG_CPU_IDLE=y
