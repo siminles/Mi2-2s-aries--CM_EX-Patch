@@ -1,6 +1,6 @@
  Makefile                                  |   4 +-
  arch/arm/Makefile                         |   1 +
- arch/arm/configs/aries-perf-usr_defconfig | 142 +++++++-
+ arch/arm/configs/aries-perf-usr_defconfig | 145 +++++++-
  arch/arm/mach-msm/Kconfig                 |  18 +
  arch/arm/mach-msm/Makefile                |   2 +
  arch/arm/mach-msm/acpuclock-8064.c        | 337 +++++++++---------
@@ -26,7 +26,7 @@
  drivers/input/touchscreen/atmel_mxt_ts.c  | 544 +++++++++++++++++++++++++++++-
  drivers/staging/prima/Makefile            |   6 +-
  include/linux/cpufreq.h                   |  11 +-
- 28 files changed, 1508 insertions(+), 283 deletions(-)
+ 28 files changed, 1511 insertions(+), 283 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index a687963..53e4e3b 100644
@@ -60,7 +60,7 @@ index d9f4657..4283596 100644
 diff --git a/arch/arm/configs/aries-perf-usr_defconfig b/arch/arm/configs/aries-perf-usr_defconfig
 old mode 100644
 new mode 100755
-index 5d3d71a..ae111ed
+index 5d3d71a..4471241
 --- a/arch/arm/configs/aries-perf-usr_defconfig
 +++ b/arch/arm/configs/aries-perf-usr_defconfig
 @@ -18,7 +18,7 @@ CONFIG_NAMESPACES=y
@@ -188,7 +188,7 @@ index 5d3d71a..ae111ed
  CONFIG_VIDEO_V4L2_SUBDEV_API=y
  CONFIG_MSM_WFD=y
  CONFIG_USER_RC_INPUT=y
-@@ -392,13 +425,30 @@ CONFIG_IMX074_EEPROM=y
+@@ -392,13 +425,32 @@ CONFIG_IMX074_EEPROM=y
  CONFIG_IMX091_EEPROM=y
  CONFIG_MSM_GEMINI=y
  CONFIG_QUP_EXCLUSIVE_TO_CAMERA=y
@@ -216,10 +216,12 @@ index 5d3d71a..ae111ed
 +# Graphics support
 +#
 +# CONFIG_DRM is not set
++CONFIG_FB_MSM_LOGO=y
++CONFIG_FB_MSM_LCDC_HW=y
  CONFIG_ION=y
  CONFIG_ION_MSM=y
  CONFIG_MSM_KGSL=y
-@@ -406,9 +456,19 @@ CONFIG_KGSL_PER_PROCESS_PAGE_TABLE=y
+@@ -406,9 +458,19 @@ CONFIG_KGSL_PER_PROCESS_PAGE_TABLE=y
  CONFIG_MSM_KGSL_PAGE_TABLE_COUNT=24
  CONFIG_FB=y
  CONFIG_FB_VIRTUAL=y
@@ -239,7 +241,7 @@ index 5d3d71a..ae111ed
  CONFIG_FB_MSM_MDP40=y
  CONFIG_FB_MSM_MIPI_DSI_CABC=y
  CONFIG_FB_MSM_OVERLAY=y
-@@ -437,7 +497,17 @@ CONFIG_SND=y
+@@ -437,7 +499,17 @@ CONFIG_SND=y
  CONFIG_SND_DYNAMIC_MINORS=y
  CONFIG_SND_USB_AUDIO=y
  CONFIG_SND_SOC=y
@@ -257,7 +259,7 @@ index 5d3d71a..ae111ed
  # CONFIG_UHID is not set
  CONFIG_HID_A4TECH=y
  CONFIG_HID_ACRUX=y
-@@ -494,7 +564,7 @@ CONFIG_USB_EHCI_HCD=y
+@@ -494,7 +566,7 @@ CONFIG_USB_EHCI_HCD=y
  CONFIG_USB_EHCI_EHSET=y
  CONFIG_USB_EHCI_MSM=y
  CONFIG_USB_EHCI_MSM_HSIC=y
@@ -266,7 +268,7 @@ index 5d3d71a..ae111ed
  CONFIG_USB_ACM=y
  CONFIG_USB_STORAGE=y
  CONFIG_USB_STORAGE_DEBUG=y
-@@ -527,7 +597,7 @@ CONFIG_MMC_CLKGATE=y
+@@ -527,7 +599,7 @@ CONFIG_MMC_CLKGATE=y
  CONFIG_MMC_PARANOID_SD_INIT=y
  CONFIG_MMC_BLOCK_MINORS=32
  # CONFIG_MMC_BLOCK_BOUNCE is not set
@@ -275,7 +277,7 @@ index 5d3d71a..ae111ed
  CONFIG_MMC_MSM=y
  CONFIG_MMC_MSM_SDC1_8_BIT_SUPPORT=y
  # CONFIG_MMC_MSM_SDC2_SUPPORT is not set
-@@ -544,8 +614,12 @@ CONFIG_RTC_DRV_PM8XXX=y
+@@ -544,8 +616,12 @@ CONFIG_RTC_DRV_PM8XXX=y
  CONFIG_STAGING=y
  CONFIG_ANDROID=y
  CONFIG_ANDROID_BINDER_IPC=y
@@ -288,7 +290,7 @@ index 5d3d71a..ae111ed
  CONFIG_ANDROID_TIMED_GPIO=y
  CONFIG_ANDROID_LOW_MEMORY_KILLER=y
  CONFIG_ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES=y
-@@ -583,8 +657,56 @@ CONFIG_SECURITY=y
+@@ -583,8 +659,57 @@ CONFIG_SECURITY=y
  CONFIG_SECURITY_NETWORK=y
  CONFIG_LSM_MMAP_MIN_ADDR=4096
  CONFIG_SECURITY_SELINUX=y
@@ -337,6 +339,7 @@ index 5d3d71a..ae111ed
 +
 +# EX Config
 +#
++CONFIG_KSM=y
 +CONFIG_CPU_VOLTAGE_TABLE=y
 +CONFIG_S2W=y
 +CONFIG_MSM_KGSL_SIMPLE_GOV=y
