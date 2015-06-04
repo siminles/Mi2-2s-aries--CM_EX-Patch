@@ -1,14 +1,15 @@
  Makefile                                  |   4 +-
  arch/arm/Makefile                         |   1 +
- arch/arm/configs/aries-perf-usr_defconfig | 143 +++++++-
+ arch/arm/configs/aries-perf-usr_defconfig | 159 ++++++++-
  arch/arm/mach-msm/Kconfig                 |  18 +
  arch/arm/mach-msm/Makefile                |   2 +
  arch/arm/mach-msm/acpuclock-8064.c        | 337 +++++++++---------
  arch/arm/mach-msm/acpuclock-krait.c       |  49 +++
  arch/arm/mach-msm/board-8064-regulator.c  |  10 +-
+ arch/arm/mach-msm/board-8064.c            |   2 +-
  arch/arm/mach-msm/board-aries-gpu.c       |  23 +-
  arch/arm/mach-msm/board-aries-regulator.c |  10 +-
- arch/arm/mach-msm/board-aries.c           |   2 +-
+ arch/arm/mach-msm/board-aries.c           |  18 +-
  arch/arm/mach-msm/clock-8960.c            |  81 ++++-
  arch/arm/mach-msm/clock-pll.c             |  37 ++
  arch/arm/mach-msm/cpufreq.c               |  79 +++++
@@ -26,7 +27,7 @@
  drivers/input/touchscreen/atmel_mxt_ts.c  | 544 +++++++++++++++++++++++++++++-
  drivers/staging/prima/Makefile            |   6 +-
  include/linux/cpufreq.h                   |  11 +-
- 28 files changed, 1509 insertions(+), 283 deletions(-)
+ 29 files changed, 1526 insertions(+), 300 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index a687963..53e4e3b 100644
@@ -58,7 +59,7 @@ index d9f4657..4283596 100644
  # This selects how we optimise for the processor.
  tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
 diff --git a/arch/arm/configs/aries-perf-usr_defconfig b/arch/arm/configs/aries-perf-usr_defconfig
-index 5d3d71a..30d88a4 100644
+index 5d3d71a..7a99a76 100644
 --- a/arch/arm/configs/aries-perf-usr_defconfig
 +++ b/arch/arm/configs/aries-perf-usr_defconfig
 @@ -18,7 +18,7 @@ CONFIG_NAMESPACES=y
@@ -161,7 +162,7 @@ index 5d3d71a..30d88a4 100644
  CONFIG_NEON=y
  # CONFIG_CORE_DUMP_DEFAULT_ELF_HEADERS is not set
  CONFIG_WAKELOCK=y
-@@ -247,6 +276,7 @@ CONFIG_BT_HCISMD=y
+@@ -247,13 +276,26 @@ CONFIG_BT_HCISMD=y
  CONFIG_CFG80211=y
  # CONFIG_CFG80211_WEXT is not set
  CONFIG_RFKILL=y
@@ -169,7 +170,28 @@ index 5d3d71a..30d88a4 100644
  CONFIG_GENLOCK=y
  CONFIG_GENLOCK_MISCDEVICE=y
  CONFIG_SYNC=y
-@@ -331,6 +361,8 @@ CONFIG_RMI4_DEV=y
+ CONFIG_SW_SYNC=y
+-CONFIG_SW_SYNC_USER=y
++# CONFIG_SW_SYNC_USER is not set
+ CONFIG_CONNECTOR=y
+-# CONFIG_CMA is not set
++CONFIG_CMA=y
++# CONFIG_CMA_DEBUG is not set
++
++#
++# Default contiguous memory area size:
++#
++CONFIG_CMA_SIZE_MBYTES=16
++CONFIG_CMA_SIZE_SEL_MBYTES=y
++# CONFIG_CMA_SIZE_SEL_PERCENTAGE is not set
++# CONFIG_CMA_SIZE_SEL_MIN is not set
++# CONFIG_CMA_SIZE_SEL_MAX is not set
++CONFIG_CMA_ALIGNMENT=8
++CONFIG_CMA_AREAS=7
+ CONFIG_BLK_DEV_LOOP=y
+ CONFIG_BLK_DEV_RAM=y
+ CONFIG_UID_STAT=y
+@@ -331,6 +373,8 @@ CONFIG_RMI4_DEV=y
  CONFIG_N_SMUX=y
  CONFIG_N_SMUX_LOOPBACK=y
  CONFIG_SMUX_CTL=y
@@ -178,7 +200,7 @@ index 5d3d71a..30d88a4 100644
  CONFIG_SERIAL_MSM_HS=y
  CONFIG_SERIAL_MSM_HSL=y
  CONFIG_DIAG_CHAR=y
-@@ -369,6 +401,7 @@ CONFIG_REGULATOR_MSM_GPIO=y
+@@ -369,6 +413,7 @@ CONFIG_REGULATOR_MSM_GPIO=y
  CONFIG_MEDIA_SUPPORT=y
  CONFIG_MEDIA_CONTROLLER=y
  CONFIG_VIDEO_DEV=y
@@ -186,7 +208,7 @@ index 5d3d71a..30d88a4 100644
  CONFIG_VIDEO_V4L2_SUBDEV_API=y
  CONFIG_MSM_WFD=y
  CONFIG_USER_RC_INPUT=y
-@@ -392,13 +425,31 @@ CONFIG_IMX074_EEPROM=y
+@@ -392,13 +437,31 @@ CONFIG_IMX074_EEPROM=y
  CONFIG_IMX091_EEPROM=y
  CONFIG_MSM_GEMINI=y
  CONFIG_QUP_EXCLUSIVE_TO_CAMERA=y
@@ -218,7 +240,7 @@ index 5d3d71a..30d88a4 100644
  CONFIG_ION=y
  CONFIG_ION_MSM=y
  CONFIG_MSM_KGSL=y
-@@ -406,9 +457,19 @@ CONFIG_KGSL_PER_PROCESS_PAGE_TABLE=y
+@@ -406,9 +469,19 @@ CONFIG_KGSL_PER_PROCESS_PAGE_TABLE=y
  CONFIG_MSM_KGSL_PAGE_TABLE_COUNT=24
  CONFIG_FB=y
  CONFIG_FB_VIRTUAL=y
@@ -238,7 +260,7 @@ index 5d3d71a..30d88a4 100644
  CONFIG_FB_MSM_MDP40=y
  CONFIG_FB_MSM_MIPI_DSI_CABC=y
  CONFIG_FB_MSM_OVERLAY=y
-@@ -437,7 +498,17 @@ CONFIG_SND=y
+@@ -437,7 +510,17 @@ CONFIG_SND=y
  CONFIG_SND_DYNAMIC_MINORS=y
  CONFIG_SND_USB_AUDIO=y
  CONFIG_SND_SOC=y
@@ -256,7 +278,7 @@ index 5d3d71a..30d88a4 100644
  # CONFIG_UHID is not set
  CONFIG_HID_A4TECH=y
  CONFIG_HID_ACRUX=y
-@@ -494,7 +565,7 @@ CONFIG_USB_EHCI_HCD=y
+@@ -494,7 +577,7 @@ CONFIG_USB_EHCI_HCD=y
  CONFIG_USB_EHCI_EHSET=y
  CONFIG_USB_EHCI_MSM=y
  CONFIG_USB_EHCI_MSM_HSIC=y
@@ -265,7 +287,7 @@ index 5d3d71a..30d88a4 100644
  CONFIG_USB_ACM=y
  CONFIG_USB_STORAGE=y
  CONFIG_USB_STORAGE_DEBUG=y
-@@ -527,7 +598,7 @@ CONFIG_MMC_CLKGATE=y
+@@ -527,7 +610,7 @@ CONFIG_MMC_CLKGATE=y
  CONFIG_MMC_PARANOID_SD_INIT=y
  CONFIG_MMC_BLOCK_MINORS=32
  # CONFIG_MMC_BLOCK_BOUNCE is not set
@@ -274,7 +296,7 @@ index 5d3d71a..30d88a4 100644
  CONFIG_MMC_MSM=y
  CONFIG_MMC_MSM_SDC1_8_BIT_SUPPORT=y
  # CONFIG_MMC_MSM_SDC2_SUPPORT is not set
-@@ -544,8 +615,12 @@ CONFIG_RTC_DRV_PM8XXX=y
+@@ -544,8 +627,12 @@ CONFIG_RTC_DRV_PM8XXX=y
  CONFIG_STAGING=y
  CONFIG_ANDROID=y
  CONFIG_ANDROID_BINDER_IPC=y
@@ -287,7 +309,7 @@ index 5d3d71a..30d88a4 100644
  CONFIG_ANDROID_TIMED_GPIO=y
  CONFIG_ANDROID_LOW_MEMORY_KILLER=y
  CONFIG_ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES=y
-@@ -583,8 +658,56 @@ CONFIG_SECURITY=y
+@@ -583,8 +670,56 @@ CONFIG_SECURITY=y
  CONFIG_SECURITY_NETWORK=y
  CONFIG_LSM_MMAP_MIN_ADDR=4096
  CONFIG_SECURITY_SELINUX=y
@@ -895,6 +917,19 @@ index f3750d2..a7640f2 100644
  
  /* PM8921 regulator constraints */
  struct pm8xxx_regulator_platform_data
+diff --git a/arch/arm/mach-msm/board-8064.c b/arch/arm/mach-msm/board-8064.c
+index c775520..6787caa 100644
+--- a/arch/arm/mach-msm/board-8064.c
++++ b/arch/arm/mach-msm/board-8064.c
+@@ -103,7 +103,7 @@
+ #define MSM_ION_MFC_META_SIZE  0x40000 /* 256 Kbytes */
+ #define MSM_CONTIG_MEM_SIZE  0x65000
+ #ifdef CONFIG_MSM_IOMMU
+-#define MSM_ION_MM_SIZE		0x3800000
++#define MSM_ION_MM_SIZE		0x5C00000
+ #define MSM_ION_SF_SIZE		0
+ #define MSM_ION_QSECOM_SIZE	0x780000 /* (7.5MB) */
+ #define MSM_ION_HEAP_NUM	8
 diff --git a/arch/arm/mach-msm/board-aries-gpu.c b/arch/arm/mach-msm/board-aries-gpu.c
 index f6b4fff..12e0aee 100644
 --- a/arch/arm/mach-msm/board-aries-gpu.c
@@ -984,10 +1019,10 @@ index cdc67a2..966e45d 100644
  /* PM8921 regulator constraints */
  struct pm8xxx_regulator_platform_data
 diff --git a/arch/arm/mach-msm/board-aries.c b/arch/arm/mach-msm/board-aries.c
-index 81a5b61..a8f0a57 100644
+index 81a5b61..93e6b41 100644
 --- a/arch/arm/mach-msm/board-aries.c
 +++ b/arch/arm/mach-msm/board-aries.c
-@@ -117,7 +117,7 @@
+@@ -117,23 +117,15 @@
  #define MSM_ION_MFC_META_SIZE  0x40000 /* 256 Kbytes */
  #define MSM_CONTIG_MEM_SIZE  0x65000
  #ifdef CONFIG_MSM_IOMMU
@@ -995,7 +1030,74 @@ index 81a5b61..a8f0a57 100644
 +#define MSM_ION_MM_SIZE		0x5C00000
  #define MSM_ION_SF_SIZE		0
  #define MSM_ION_QSECOM_SIZE	0x780000 /* (7.5MB) */
- #ifdef CONFIG_CMA
+-#ifdef CONFIG_CMA
+ #define MSM_ION_HEAP_NUM	8
+ #else
+-#define MSM_ION_HEAP_NUM	7
+-#endif
+-#else
+ #define MSM_ION_MM_SIZE		MSM_PMEM_ADSP_SIZE
+ #define MSM_ION_SF_SIZE		MSM_PMEM_SIZE
+ #define MSM_ION_QSECOM_SIZE	0x600000 /* (6MB) */
+-#ifdef CONFIG_CMA
+ #define MSM_ION_HEAP_NUM	8
+-#else
+-#define MSM_ION_HEAP_NUM	7
+-#endif
+ #endif
+ #define MSM_ION_MM_FW_SIZE	(0x200000 - HOLE_SIZE) /* (2MB - 128KB) */
+ #define MSM_ION_MFC_SIZE	(SZ_8K + MSM_ION_MFC_META_SIZE)
+@@ -315,9 +307,8 @@ static struct ion_cp_heap_pdata cp_mm_apq8064_ion_pdata = {
+ 	.reusable = FMEM_ENABLED,
+ 	.mem_is_fmem = FMEM_ENABLED,
+ 	.fixed_position = FIXED_MIDDLE,
+-#ifdef CONFIG_CMA
+ 	.is_cma = 1,
+-#endif
++	.no_nonsecure_alloc = 1,
+ };
+ 
+ static struct ion_cp_heap_pdata cp_mfc_apq8064_ion_pdata = {
+@@ -326,6 +317,7 @@ static struct ion_cp_heap_pdata cp_mfc_apq8064_ion_pdata = {
+ 	.reusable = 0,
+ 	.mem_is_fmem = FMEM_ENABLED,
+ 	.fixed_position = FIXED_HIGH,
++	.no_nonsecure_alloc = 1,
+ };
+ 
+ static struct ion_co_heap_pdata co_apq8064_ion_pdata = {
+@@ -353,7 +345,6 @@ static struct platform_device ion_mm_heap_device = {
+ 	}
+ };
+ 
+-#ifdef CONFIG_CMA
+ static struct platform_device ion_adsp_heap_device = {
+ 	.name = "ion-adsp-heap-device",
+ 	.id = -1,
+@@ -362,7 +353,6 @@ static struct platform_device ion_adsp_heap_device = {
+ 		.coherent_dma_mask = DMA_BIT_MASK(32),
+ 	}
+ };
+-#endif
+ /**
+  * These heaps are listed in the order they will be allocated. Due to
+  * video hardware restrictions and content protection the FW heap has to
+@@ -437,7 +427,6 @@ struct ion_platform_heap apq8064_heaps[] = {
+ 			.memory_type = ION_EBI_TYPE,
+ 			.extra_data = (void *) &co_apq8064_ion_pdata,
+ 		},
+-#ifdef CONFIG_CMA
+ 		{
+ 			.id     = ION_ADSP_HEAP_ID,
+ 			.type   = ION_HEAP_TYPE_DMA,
+@@ -448,7 +437,6 @@ struct ion_platform_heap apq8064_heaps[] = {
+ 			.priv = &ion_adsp_heap_device.dev,
+ 		},
+ #endif
+-#endif
+ };
+ 
+ static struct ion_platform_data apq8064_ion_pdata = {
 diff --git a/arch/arm/mach-msm/clock-8960.c b/arch/arm/mach-msm/clock-8960.c
 index f67de68..731bebb 100755
 --- a/arch/arm/mach-msm/clock-8960.c
