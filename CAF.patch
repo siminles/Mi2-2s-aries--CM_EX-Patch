@@ -15,7 +15,7 @@
  arch/arm/vfp/Makefile                      |   2 +-
  drivers/cpufreq/Kconfig                    |  26 ++
  drivers/cpufreq/Makefile                   |   1 +
- drivers/cpufreq/cpufreq.c                  |  93 +++++
+ drivers/cpufreq/cpufreq.c                  | 113 ++++++
  drivers/gpu/ion/Makefile                   |   1 +
  drivers/gpu/ion/msm/Makefile               |   1 +
  drivers/gpu/msm/Makefile                   |   2 +-
@@ -23,7 +23,7 @@
  drivers/input/touchscreen/Kconfig          |   6 +
  drivers/input/touchscreen/atmel_mxt_ts.c   | 544 ++++++++++++++++++++++++++++-
  include/linux/cpufreq.h                    |   3 +
- 25 files changed, 1205 insertions(+), 176 deletions(-)
+ 25 files changed, 1225 insertions(+), 176 deletions(-)
 
 diff --git a/Makefile b/Makefile
 index 3857753..c74fab7 100644
@@ -1070,10 +1070,10 @@ index 83ab92b..68f2891 100644
  # CPUfreq cross-arch helpers
  obj-$(CONFIG_CPU_FREQ_TABLE)		+= freq_table.o
 diff --git a/drivers/cpufreq/cpufreq.c b/drivers/cpufreq/cpufreq.c
-index 18cda4a..2738013 100644
+index 18cda4a..350f5be 100644
 --- a/drivers/cpufreq/cpufreq.c
 +++ b/drivers/cpufreq/cpufreq.c
-@@ -32,12 +32,20 @@
+@@ -32,12 +32,19 @@
  
  #include <trace/events/power.h>
  
@@ -1089,12 +1089,11 @@ index 18cda4a..2738013 100644
   */
  static struct cpufreq_driver *cpufreq_driver;
 +/* Maintains per cpu sysfs access information */
-+static struct cpufreq_cpu_sysinfo cpu_sysnode[NR_CPUS];
 +
  static DEFINE_PER_CPU(struct cpufreq_policy *, cpufreq_cpu_data);
  #ifdef CONFIG_HOTPLUG_CPU
  /* This one keeps track of the previously set governor of a removed CPU */
-@@ -653,6 +661,84 @@ static ssize_t show_bios_limit(struct cpufreq_policy *policy, char *buf)
+@@ -653,6 +660,84 @@ static ssize_t show_bios_limit(struct cpufreq_policy *policy, char *buf)
  	return sprintf(buf, "%u\n", policy->cpuinfo.max_freq);
  }
  
@@ -1179,7 +1178,7 @@ index 18cda4a..2738013 100644
  cpufreq_freq_attr_ro_perm(cpuinfo_cur_freq, 0400);
  cpufreq_freq_attr_ro(cpuinfo_min_freq);
  cpufreq_freq_attr_ro(cpuinfo_max_freq);
-@@ -670,6 +756,13 @@ cpufreq_freq_attr_rw(scaling_governor);
+@@ -670,6 +755,13 @@ cpufreq_freq_attr_rw(scaling_governor);
  cpufreq_freq_attr_rw(scaling_setspeed);
  cpufreq_freq_attr_rw(dvfs_test);
  
@@ -1193,6 +1192,51 @@ index 18cda4a..2738013 100644
  static struct attribute *default_attrs[] = {
  	&cpuinfo_min_freq.attr,
  	&cpuinfo_max_freq.attr,
+@@ -684,9 +776,24 @@ static struct attribute *default_attrs[] = {
+ 	&scaling_available_governors.attr,
+ 	&scaling_setspeed.attr,
+         &dvfs_test.attr,
++#ifdef CONFIG_GPU_VOLTAGE_TABLE
++	&gpu_mv_table.attr,
++#endif
+ 	NULL
+ };
+ 
++#ifdef CONFIG_CPU_VOLTAGE_TABLE
++static struct attribute *vddtbl_attrs[] = {
++	&vdd_levels.attr,
++	NULL
++};
++
++static struct attribute_group vddtbl_attr_group = {
++	.attrs = vddtbl_attrs,
++	.name = "vdd_table",
++};
++#endif	/* CONFIG_CPU_VOLTAGE_TABLE */
++
+ struct kobject *cpufreq_global_kobject;
+ EXPORT_SYMBOL(cpufreq_global_kobject);
+ 
+@@ -2036,6 +2143,9 @@ EXPORT_SYMBOL_GPL(cpufreq_unregister_driver);
+ static int __init cpufreq_core_init(void)
+ {
+ 	int cpu;
++#ifdef CONFIG_CPU_VOLTAGE_TABLE
++	int rc;
++#endif	/* CONFIG_CPU_VOLTAGE_TABLE */
+ 
+ 	if (cpufreq_disabled())
+ 		return -ENODEV;
+@@ -2054,6 +2164,9 @@ static int __init cpufreq_core_init(void)
+ 	cpufreq_global_kobject->kset = cpufreq_kset;
+ 
+ 	register_syscore_ops(&cpufreq_syscore_ops);
++#ifdef CONFIG_CPU_VOLTAGE_TABLE
++	rc = sysfs_create_group(cpufreq_global_kobject, &vddtbl_attr_group);
++#endif	/* CONFIG_CPU_VOLTAGE_TABLE */
+ 
+ 	return 0;
+ }
 diff --git a/drivers/gpu/ion/Makefile b/drivers/gpu/ion/Makefile
 index 51349f6..3406731 100644
 --- a/drivers/gpu/ion/Makefile
